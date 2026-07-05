@@ -7,9 +7,10 @@ dashboard, encrypted chain-of-custody-tracked evidence, a rich-text case
 narrative with inline images, real-time per-case chat & notes, versioned
 post-incident review reports, and threat-intelligence integration (feed
 import, per-case IOC linking, watchlist matching, TLP-gated outbound-sharing
-approval). Phase 6 (hardening & go-live — pen test, DR drill, compliance
-review) is the one item left on the original roadmap, and is inherently an
-exercise done against a real deployment rather than something to code.
+approval). Phase 6 (hardening & go-live) is underway — the security-hardening
+slice (rate limiting, security headers, fail-fast config validation, strict
+input validation) is done; the pen test / DR drill / compliance review are
+inherently exercises against a real deployment rather than something to code.
 
 ## Stack
 
@@ -217,6 +218,42 @@ inherently cross-case:
   audited action; the "send it to MISP/whoever" step is a documented gap,
   the same honest trade-off as evidence storage using local WORM instead of
   MinIO.
+
+## Security Hardening (Phase 6, in progress)
+
+- **Rate limiting**: a global ceiling (100 req/min/IP via `@nestjs/throttler`)
+  plus a much stricter override on `POST /auth/login` (5/min/IP). The login
+  limit is per-IP, not per-account — it doesn't leak whether a given email
+  exists by behaving differently, and one attacker can't route around it by
+  cycling through account names.
+- **Security headers via `helmet`**: `X-Powered-By` is gone, `X-Frame-Options`,
+  `X-Content-Type-Options`, `Strict-Transport-Security`, and friends are set.
+  One deliberate override: `crossOriginResourcePolicy: 'cross-origin'` —
+  helmet's `same-origin` default would have silently broken every inline
+  image embed and evidence download, since the frontend and API are
+  different origins by design here and access control already happens via
+  the unguessable UUID / JWT check, not the browser's same-origin policy.
+- **Fail-fast startup validation** (`backend/src/common/startup-validation.util.ts`):
+  when `NODE_ENV=production`, the app refuses to boot if `JWT_SECRET` is
+  still the scaffold default (or under 32 characters) or
+  `EVIDENCE_ENCRYPTION_KEY` is missing/malformed — instead of the previous
+  behavior, where a misconfigured production instance would run fine until
+  the first evidence upload threw at request time. In development it just
+  warns.
+- **`forbidNonWhitelisted` on the global `ValidationPipe`**: a request body
+  carrying a field no DTO declares is now rejected (400) instead of silently
+  stripped — verified with `{"...", "isAdmin": true}` against case creation,
+  which now correctly 400s instead of quietly ignoring the extra field.
+- **`npm audit fix` run on both apps**: nothing was fixable without a major
+  version bump (`@nestjs/cli@11`, `@nestjs/typeorm@11`, `vite@8`) — the
+  remaining advisories are the same transitive, DoS-class, low-risk-for-an-
+  internal-tool ones already called out below.
+- **Not yet done**: MFA enforcement (the `User.mfaEnabled` column exists but
+  nothing sets or checks it, despite the plan requiring MFA for evidence
+  access), JWT revocation/blacklist (logout is client-side-only — a stolen
+  token remains valid until it expires), and an automated test suite (every
+  verification in this build has been manual, per-session, via curl/Playwright
+  scripts that don't persist).
 
 ## Notes for going further
 
