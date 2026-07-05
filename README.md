@@ -14,11 +14,11 @@ revocation on logout), optional Google Sign-In (domain-gated
 auto-provisioning, server-verified ID tokens), full User & Role
 Administration (create/deactivate accounts, role/team changes, password
 resets, team management) with its own hash-chained admin action audit
-trail, real TypeORM migrations in place of `synchronize: true`, and a
-128-test backend e2e suite covering every security-critical property are
-all done; the pen test / DR drill / compliance review are inherently
-exercises against a real deployment rather
-than something to code.
+trail, real TypeORM migrations in place of `synchronize: true`, a NestJS
+v11 upgrade that took `npm audit` from 30 findings to 0, and a 128-test
+backend e2e suite covering every security-critical property are all done;
+the pen test / DR drill / compliance review are inherently exercises
+against a real deployment rather than something to code.
 
 ## Stack
 
@@ -341,10 +341,11 @@ instead of per-case:
   carrying a field no DTO declares is now rejected (400) instead of silently
   stripped — verified with `{"...", "isAdmin": true}` against case creation,
   which now correctly 400s instead of quietly ignoring the extra field.
-- **`npm audit fix` run on both apps**: nothing was fixable without a major
-  version bump (`@nestjs/cli@11`, `@nestjs/typeorm@11`, `vite@8`) — the
-  remaining advisories are the same transitive, DoS-class, low-risk-for-an-
-  internal-tool ones already called out below.
+- **`npm audit fix` run on both apps**: at the time, nothing was fixable
+  without a major version bump (`@nestjs/cli@11`, `@nestjs/typeorm@11`,
+  `vite@8`) — the remaining advisories were the same transitive, DoS-class
+  ones called out below. The backend has since taken that major bump; see
+  "Notes for going further" for how that went.
 - **MFA (TOTP) gating evidence access**: `POST /auth/mfa/setup` generates a
   secret (`otplib`) encrypted at rest with the same AES-256-GCM key as
   evidence/case-images, returns a QR code (`qrcode`) for the user's
@@ -555,10 +556,23 @@ migrations, in dev, test, and prod alike:
 - Evidence upload buffers the whole file in memory (`multer.memoryStorage()`)
   — fine for the scaffold, but real disk images / memory dumps need chunked
   or streamed intake instead.
-- `@nestjs/platform-express@10.x` bundles its own `multer@2.0.2`, which has an
-  open DoS advisory (deeply-nested multipart field names) only fixed by a
-  NestJS v11 major upgrade. `@nestjs/websockets`/`@nestjs/platform-socket.io`
-  pull in a similar tier of transitive moderate DoS-class advisories (`qs`,
-  `ajv`, `uuid`) via `@nestjs/core`. All of this is low risk for an internal,
-  non-public-facing SOC tool, but worth revisiting — likely via a NestJS v11
-  upgrade — before any internet-facing deployment.
+- **Upgraded to NestJS v11** (all `@nestjs/*` packages, Express v5 under the
+  hood) specifically to clear the `multer`/`qs`/`ajv`/`uuid` transitive
+  DoS-class advisories flagged above in earlier phases — `npm audit` went
+  from 30 findings to 0. Two things the version bump alone didn't fix,
+  closed separately: `multer` stayed vulnerable up to `2.1.1` even in
+  `@nestjs/platform-express@11.1.27`'s own pinned copy (the real fix
+  landed in `2.2.0`), so `package.json` both declares `multer@^2.2.0`
+  directly (we already import it for `memoryStorage()`) and forces it via
+  npm's `overrides` field so the copy nested inside
+  `@nestjs/platform-express` can't stay pinned to the older, vulnerable
+  version — `npm ls multer` confirms a single deduped `2.2.0` everywhere.
+  `bcrypt` was upgraded to `v6` separately to drop an old
+  `@mapbox/node-pre-gyp`/`tar` chain.
+  Express v5's breaking changes (renamed wildcard routes, `qs`→`simple`
+  query parsing, `Reflector.getAllAndOverride` now returning
+  `T | undefined`) turned out not to touch this app at all — no wildcard
+  routes, no nested query params, and `PermissionsGuard` already treated a
+  missing reflector result as falsy. All 128 e2e tests, including the ones
+  that exercise real multipart uploads and a real Socket.IO connection,
+  passed against the upgrade without a single test change.
