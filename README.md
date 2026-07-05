@@ -9,8 +9,10 @@ post-incident review reports, and threat-intelligence integration (feed
 import, per-case IOC linking, watchlist matching, TLP-gated outbound-sharing
 approval). Phase 6 (hardening & go-live) is underway — the security-hardening
 slice (rate limiting, security headers, fail-fast config validation, strict
-input validation) is done; the pen test / DR drill / compliance review are
-inherently exercises against a real deployment rather than something to code.
+input validation) and a 103-test backend e2e suite covering every
+security-critical property are both done; the pen test / DR drill /
+compliance review are inherently exercises against a real deployment rather
+than something to code.
 
 ## Stack
 
@@ -250,10 +252,58 @@ inherently cross-case:
   internal-tool ones already called out below.
 - **Not yet done**: MFA enforcement (the `User.mfaEnabled` column exists but
   nothing sets or checks it, despite the plan requiring MFA for evidence
-  access), JWT revocation/blacklist (logout is client-side-only — a stolen
-  token remains valid until it expires), and an automated test suite (every
-  verification in this build has been manual, per-session, via curl/Playwright
-  scripts that don't persist).
+  access) and JWT revocation/blacklist (logout is client-side-only — a stolen
+  token remains valid until it expires).
+
+## Automated Test Suite
+
+Every security-critical property that was previously verified manually
+per-session (via throwaway curl/Playwright scripts that didn't persist) is
+now encoded as a permanent Jest e2e suite:
+
+```bash
+cd backend
+npm run test:e2e
+```
+
+103 tests across 11 spec files (`backend/test/*.e2e-spec.ts`), all boot a real
+Nest app (`test/utils/test-app.ts`) — real guards, real TypeORM, real
+AES-256-GCM crypto — against an isolated in-memory SQLite DB and a per-test
+temp directory for evidence/case-image blobs, rather than mocking anything
+security-relevant:
+
+- **`configureApp()` is shared** between `main.ts` and the test bootstrap
+  (`backend/src/common/configure-app.ts`) — helmet, `forbidNonWhitelisted`,
+  and the passwordHash-stripping serializer interceptor are wired up exactly
+  once, so the suite can't silently drift into testing a stricter or looser
+  app than what's actually deployed.
+- **`rbac.e2e-spec.ts`** encodes the full access-control matrix from
+  `docs/PLAN.md` as data-driven assertions (8 actions × 6 roles).
+- **`evidence.e2e-spec.ts`** includes a real tamper-detection test: it flips
+  a byte in the WORM-locked ciphertext on disk and asserts download fails
+  closed (500), plus a WORM permission check (`0o444`) and the full per-item
+  access-grant lifecycle (grant, use, revoke, leadership bypass).
+- **`chat.e2e-spec.ts`** opens a real Socket.IO connection via
+  `socket.io-client` against a listening server and confirms a message
+  posted over REST arrives over the socket — not just that the REST side
+  works.
+- **`case-narrative.e2e-spec.ts`** confirms the sanitizer actually strips
+  `<script>` tags, event handlers, and external/`data:`/`javascript:` image
+  sources, not just that safe formatting round-trips.
+- **`threat-intel.e2e-spec.ts`** and **`security.e2e-spec.ts`** cover the
+  TLP-gated share-request lifecycle end-to-end and cross-cutting properties
+  (mass-assignment rejection, no `passwordHash`/evidence-internals leakage,
+  security headers present) respectively.
+- Rate limiting is disabled for the suite via an env flag read at
+  `AppModule` decoration time (`DISABLE_THROTTLING`, set in
+  `test/env-setup.ts`) — seeding six fixture users per spec file would
+  otherwise trip the same 5/min login throttle real traffic hits. The
+  throttle's own config is still checked, via a decorator-metadata
+  assertion in `auth.e2e-spec.ts`.
+- **Not covered**: the frontend has no automated tests yet — this suite is
+  backend-only, since that's where the system's actual security-critical
+  properties (RBAC, encryption, sanitization, immutability, TLP gating)
+  live; frontend tests would mostly confirm buttons render.
 
 ## Notes for going further
 

@@ -7,12 +7,17 @@ import { AuthModule } from './auth/auth.module';
 import { CaseImagesModule } from './case-images/case-images.module';
 import { CasesModule } from './cases/cases.module';
 import { ChatModule } from './chat/chat.module';
+import { AllowAllGuard } from './common/guards/allow-all.guard';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { DatabaseModule } from './database/database.module';
 import { EvidenceModule } from './evidence/evidence.module';
 import { PirModule } from './pir/pir.module';
 import { ThreatIntelModule } from './threat-intel/threat-intel.module';
 import { UsersModule } from './users/users.module';
+
+// Set (once, before any test file's module graph resolves) by test/env-setup.ts —
+// see AllowAllGuard for why this can't be handled via @nestjs/testing's guard overrides.
+const throttlerGuardClass = process.env.DISABLE_THROTTLING === 'true' ? AllowAllGuard : ThrottlerGuard;
 
 @Module({
   imports: [
@@ -32,6 +37,6 @@ import { UsersModule } from './users/users.module';
     PirModule,
     ThreatIntelModule,
   ],
-  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [{ provide: APP_GUARD, useClass: throttlerGuardClass }],
 })
 export class AppModule {}
