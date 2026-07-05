@@ -1,11 +1,13 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AdminAuditModule } from './admin-audit/admin-audit.module';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { CaseImagesModule } from './case-images/case-images.module';
+import { NarrativeImageGcModule } from './case-images/narrative-image-gc.module';
 import { CasesModule } from './cases/cases.module';
 import { ChatModule } from './chat/chat.module';
 import { AllowAllGuard } from './common/guards/allow-all.guard';
@@ -26,12 +28,15 @@ const throttlerGuardClass = process.env.DISABLE_THROTTLING === 'true' ? AllowAll
     // Global ceiling against scraping/abuse; individual routes (e.g. login)
     // override with a stricter limit via @Throttle().
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    // Backs NarrativeImageGcService's nightly sweep (see case-images/narrative-image-gc.service.ts).
+    ScheduleModule.forRoot(),
     DatabaseModule,
     AdminAuditModule,
     AuthModule,
     UsersModule,
     CasesModule,
     CaseImagesModule,
+    NarrativeImageGcModule,
     AuditModule,
     DashboardModule,
     EvidenceModule,

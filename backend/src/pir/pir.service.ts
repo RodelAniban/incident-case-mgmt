@@ -1,7 +1,8 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuditService } from '../audit/audit.service';
+import { NarrativeImageGcService } from '../case-images/narrative-image-gc.service';
 import { CasesService, RequestUser } from '../cases/cases.service';
 import { sanitizeNarrativeHtml } from '../cases/sanitize-narrative.util';
 import { EvidenceItem, PirActionItem, PirReport, PirSectionKey, PirSections, User } from '../entities';
@@ -33,6 +34,8 @@ export interface PirReportView extends Omit<PirReport, 'sectionsJson'> {
 
 @Injectable()
 export class PirService {
+  private readonly logger = new Logger(PirService.name);
+
   constructor(
     @InjectRepository(PirReport) private readonly reports: Repository<PirReport>,
     @InjectRepository(PirActionItem) private readonly actions: Repository<PirActionItem>,
@@ -40,6 +43,7 @@ export class PirService {
     @InjectRepository(User) private readonly users: Repository<User>,
     private readonly casesService: CasesService,
     private readonly auditService: AuditService,
+    private readonly narrativeImageGc: NarrativeImageGcService,
   ) {}
 
   private toView(report: PirReport): PirReportView {
@@ -114,7 +118,17 @@ export class PirService {
     });
 
     report.sectionsJson = JSON.stringify(next);
-    return this.toView(await this.reports.save(report));
+    const saved = await this.reports.save(report);
+
+    // Best-effort: an edit that drops an inline image from a section
+    // shouldn't fail the save itself if cleanup hits a snag.
+    try {
+      await this.narrativeImageGc.sweepCase(report.case.id);
+    } catch (err) {
+      this.logger.warn(`Narrative image sweep failed for case ${report.case.id}: ${err}`);
+    }
+
+    return this.toView(saved);
   }
 
   async finalize(reportId: number, actor: RequestUser): Promise<PirReportView> {

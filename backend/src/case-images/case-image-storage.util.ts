@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
 function storageRoot(): string {
@@ -20,4 +20,9 @@ export function writeCaseImageBlob(caseId: number, filename: string, data: Buffe
 
 export function readCaseImageBlob(storageRef: string): Buffer {
   return readFileSync(join(storageRoot(), storageRef));
+}
+
+/** Used by NarrativeImageGcService to reclaim blobs no saved content references anymore. */
+export function deleteCaseImageBlob(storageRef: string): void {
+  rmSync(join(storageRoot(), storageRef), { force: true });
 }

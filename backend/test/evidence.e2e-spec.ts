@@ -80,6 +80,13 @@ describe('evidence', () => {
   });
 
   it('round-trips a multi-chunk file correctly and leaves no temp files behind (streamed intake, not buffered)', async () => {
+    // Snapshot what's already there — os.tmpdir() is shared with whatever
+    // else is running on the machine (and any stale file an earlier crashed
+    // run left behind), so only files that appear *after* this test's own
+    // upload/download count as something this test leaked.
+    const listTempCandidates = () => fs.readdirSync(tmpdir()).filter((f) => f.startsWith('evidence-upload-') || f.startsWith('evidence-dl-'));
+    const preExisting = new Set(listTempCandidates());
+
     // Upload/download now stream through a temp file rather than holding
     // the whole thing in a Buffer (see EvidenceService.upload/download) —
     // a few MB comfortably spans many stream chunks (Node's default
@@ -113,11 +120,11 @@ describe('evidence', () => {
     // EvidenceController.download), so it can trail the client's own
     // response-received promise by a tick or two — poll briefly rather
     // than asserting the instant supertest's await resolves.
-    const findLeftovers = () => fs.readdirSync(tmpdir()).filter((f) => f.startsWith('evidence-upload-') || f.startsWith('evidence-dl-'));
-    let leftovers = findLeftovers();
+    const findNewLeftovers = () => listTempCandidates().filter((f) => !preExisting.has(f));
+    let leftovers = findNewLeftovers();
     for (let attempt = 0; leftovers.length > 0 && attempt < 20; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 50));
-      leftovers = findLeftovers();
+      leftovers = findNewLeftovers();
     }
     expect(leftovers).toEqual([]);
   });

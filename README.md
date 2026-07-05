@@ -16,10 +16,11 @@ Administration (create/deactivate accounts, role/team changes, password
 resets, team management) with its own hash-chained admin action audit
 trail, real TypeORM migrations in place of `synchronize: true`, a NestJS
 v11 upgrade that took `npm audit` from 30 findings to 0, streamed (not
-memory-buffered) evidence intake for multi-GB forensic files, and a
-129-test backend e2e suite covering every security-critical property are
-all done; the pen test / DR drill / compliance review are inherently
-exercises against a real deployment rather than something to code.
+memory-buffered) evidence intake for multi-GB forensic files, garbage
+collection for orphaned narrative images, and a 135-test backend e2e suite
+covering every security-critical property are all done; the pen test / DR
+drill / compliance review are inherently exercises against a real
+deployment rather than something to code.
 
 ## Stack
 
@@ -148,8 +149,48 @@ lists, blockquote) plus inline images:
   `/api/case-images/<uuid>/raw` (any host) — external hotlinks, `data:` URIs,
   and `javascript:` URIs are all rejected, closing off the obvious abuse of a
   more permissive image allowlist (tracking pixels, XSS via crafted src).
-- **Known limitation**: deleting an image out of the narrative doesn't delete
-  its stored blob — there's no garbage collection pass in this scaffold.
+- **Orphaned images are garbage-collected** — see below.
+
+## Narrative Image Garbage Collection
+
+Pasting/dropping/toolbar-uploading an inline image writes its blob and DB
+row immediately, well before the narrative (or PIR section) that will
+embed it is ever saved — editing the doc afterward to remove the image, or
+abandoning the edit entirely, used to leave that blob on disk forever.
+`NarrativeImageGcService` (`backend/src/case-images/narrative-image-gc.service.ts`)
+reclaims it instead:
+
+- **"Referenced" spans every place an image can appear, not just the one
+  field being saved**: a case's current narrative (`Case.description`)
+  *and every version* of its PIR reports (`PirReport.sectionsJson`).
+  Finalized PIR versions are immutable historical records — an image a
+  finalized report embeds must never be reclaimed just because it later
+  dropped out of the live narrative, so the sweep checks all of them, not
+  only the current draft.
+- **Two triggers, one underlying sweep**: `sweepCase(caseId)` runs
+  automatically (best-effort — a cleanup hiccup never fails the actual
+  save) right after any case-narrative or PIR-section update, and again
+  nightly across every case via `@nestjs/schedule`
+  (`sweepAllCases()` at 2am) as a safety net for the case a per-save sweep
+  structurally can't catch: an image that was uploaded and then never
+  attached to *any* saved content at all, so there's no save event to hang
+  a check off of.
+- **A 24-hour grace period** protects an image that's simply mid-edit — a
+  user can paste a screenshot and take a while to finish attaching it to
+  the doc before saving; a sweep running in that window must not delete it
+  just because it isn't referenced *yet*.
+- **Manual trigger for ops visibility**: `POST /case-images/gc` (Admin-only,
+  same as most maintenance-shaped actions in this app) runs the nightly
+  sweep on demand and returns how many images it reclaimed — useful for
+  confirming cleanup is actually working, or reclaiming storage without
+  waiting for 2am.
+- **Known limitation**: no persisted log of *which* images were reclaimed
+  or when — only the server's own process logs record a sweep's result,
+  unlike the hash-chained ledgers the rest of this app uses for
+  security-relevant history. Deleting an orphaned illustration isn't a
+  security-relevant event the way an admin action or a case edit is, so
+  this felt proportionate rather than an oversight — worth revisiting if
+  that judgment call turns out to be wrong.
 
 ## Secure Analyst Chat & Notes
 
@@ -449,7 +490,7 @@ cd backend
 npm run test:e2e
 ```
 
-129 tests across 15 spec files (`backend/test/*.e2e-spec.ts`), all boot a real
+135 tests across 16 spec files (`backend/test/*.e2e-spec.ts`), all boot a real
 Nest app (`test/utils/test-app.ts`) — real guards, real TypeORM, real
 AES-256-GCM crypto — against an isolated in-memory SQLite DB and a per-test
 temp directory for evidence/case-image blobs, rather than mocking anything
@@ -518,6 +559,13 @@ security-relevant:
   `/admin-audit/verify` reports a genuinely valid chain, and — reusing the
   lesson from the `GET /users` leak above — that the nested actor/target
   user objects never carry `passwordHash` or the MFA-secret columns.
+- **`narrative-image-gc.e2e-spec.ts`** proves the two properties easiest to
+  get backwards in a sweep like this: a real 24-hour-grace-period check
+  that a just-orphaned image survives a *real* automatic sweep, and —
+  reached via `ctx.app.get(NarrativeImageGcService)` to force the grace
+  period to zero rather than waiting out 24 real hours — that an image a
+  *finalized* PIR version still embeds survives even when forced, purely
+  because that version's immutable content still references it.
 - Rate limiting is disabled for the suite via an env flag read at
   `AppModule` decoration time (`DISABLE_THROTTLING`, set in
   `test/env-setup.ts`) — seeding six fixture users per spec file would

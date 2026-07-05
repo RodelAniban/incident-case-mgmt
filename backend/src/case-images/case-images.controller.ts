@@ -20,10 +20,14 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { Permission } from '../common/permissions';
 import { CaseImagesService, MAX_IMAGE_BYTES } from './case-images.service';
+import { NarrativeImageGcService } from './narrative-image-gc.service';
 
 @Controller()
 export class CaseImagesController {
-  constructor(private readonly caseImagesService: CaseImagesService) {}
+  constructor(
+    private readonly caseImagesService: CaseImagesService,
+    private readonly narrativeImageGcService: NarrativeImageGcService,
+  ) {}
 
   @Post('cases/:caseId/images')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -58,5 +62,18 @@ export class CaseImagesController {
       'Content-Length': String(buffer.length),
     });
     res.send(buffer);
+  }
+
+  /**
+   * Manual trigger for the same sweep NarrativeImageGcService otherwise runs
+   * automatically (after every narrative/PIR save, and nightly across every
+   * case) — lets an admin confirm cleanup is actually working, or reclaim
+   * storage on demand, without waiting for the 2am cron.
+   */
+  @Post('case-images/gc')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @RequirePermissions(Permission.MANAGE_USERS)
+  runGc() {
+    return this.narrativeImageGcService.sweepAllCases();
   }
 }

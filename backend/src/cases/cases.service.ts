@@ -1,10 +1,11 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Permission, roleHasPermission } from '../common/permissions';
 import { Role } from '../common/roles.enum';
 import { Case, CaseSeverity, CaseStatus, Team, User } from '../entities';
 import { AuditService } from '../audit/audit.service';
+import { NarrativeImageGcService } from '../case-images/narrative-image-gc.service';
 import { CreateCaseDto } from './dto/create-case.dto';
 import { UpdateCaseDto } from './dto/update-case.dto';
 import { htmlToExcerpt, sanitizeNarrativeHtml } from './sanitize-narrative.util';
@@ -20,11 +21,14 @@ const HIGH_SEVERITIES = new Set([CaseSeverity.CRITICAL, CaseSeverity.HIGH]);
 
 @Injectable()
 export class CasesService {
+  private readonly logger = new Logger(CasesService.name);
+
   constructor(
     @InjectRepository(Case) private readonly cases: Repository<Case>,
     @InjectRepository(Team) private readonly teams: Repository<Team>,
     @InjectRepository(User) private readonly users: Repository<User>,
     private readonly auditService: AuditService,
+    private readonly narrativeImageGc: NarrativeImageGcService,
   ) {}
 
   async create(dto: CreateCaseDto, actor: RequestUser): Promise<Case> {
@@ -118,6 +122,7 @@ export class CasesService {
 
     // Handled separately from trackedFields: the audit entry logs a plain-text excerpt,
     // not the full HTML, so the hash chain doesn't bloat on every narrative edit.
+    let descriptionChanged = false;
     if (dto.description !== undefined) {
       const sanitized = sanitizeNarrativeHtml(dto.description);
       if (sanitized !== existing.description) {
@@ -129,6 +134,7 @@ export class CasesService {
           newValue: htmlToExcerpt(sanitized),
         });
         existing.description = sanitized;
+        descriptionChanged = true;
       }
     }
 
@@ -144,7 +150,19 @@ export class CasesService {
       existing.assignee = assignee;
     }
 
-    return this.cases.save(existing);
+    const saved = await this.cases.save(existing);
+
+    // Best-effort: an edit that drops an inline image from the narrative
+    // shouldn't fail the save itself if cleanup hits a snag.
+    if (descriptionChanged) {
+      try {
+        await this.narrativeImageGc.sweepCase(saved.id);
+      } catch (err) {
+        this.logger.warn(`Narrative image sweep failed for case ${saved.id}: ${err}`);
+      }
+    }
+
+    return saved;
   }
 
   private async nextCaseNumber(): Promise<string> {
