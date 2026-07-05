@@ -2,7 +2,19 @@ import { Column, CreateDateColumn, Entity, ManyToOne, PrimaryGeneratedColumn } f
 import { Case } from './case.entity';
 import { User } from './user.entity';
 
-/** Phase 3 (Secure Analyst Chat & Notes) — schema reserved now, delivery ships later. */
+export enum NoteTag {
+  FINDING = 'finding',
+  HYPOTHESIS = 'hypothesis',
+  ACTION_ITEM = 'action_item',
+  HANDOFF = 'handoff',
+}
+
+/**
+ * Per-case chat/notes. `body` is stored as plain markdown source — never HTML —
+ * so there's nothing to sanitize at rest; rendering sanitizes on the way out
+ * (see frontend ChatPanel). No link or image tags survive rendering, by design:
+ * no external egress, no third-party embeds.
+ */
 @Entity('chat_messages')
 export class ChatMessage {
   @PrimaryGeneratedColumn()
@@ -17,8 +29,8 @@ export class ChatMessage {
   @Column({ type: 'text' })
   body: string;
 
-  @Column({ nullable: true })
-  tag: string;
+  @Column({ type: 'varchar', nullable: true })
+  tag: NoteTag | null;
 
   @CreateDateColumn()
   ts: Date;

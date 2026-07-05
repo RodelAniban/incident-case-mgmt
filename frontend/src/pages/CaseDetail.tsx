@@ -22,6 +22,7 @@ import {
   Permission,
   STATUS_LABELS,
 } from '../api/types';
+import { ChatPanel } from '../components/ChatPanel';
 import { EvidencePanel } from '../components/EvidencePanel';
 import { NarrativeEditor, NarrativeViewer } from '../components/NarrativeEditor';
 import { SeverityChip } from '../components/SeverityChip';
@@ -186,6 +187,8 @@ export function CaseDetail() {
       </Paper>
 
       <EvidencePanel caseId={caseData.id} />
+
+      <ChatPanel caseId={caseData.id} />
 
       {can(Permission.VIEW_AUDIT_LOG) && (
         <Paper variant="outlined">

@@ -2,7 +2,6 @@ import AdminPanelSettingsOutlinedIcon from '@mui/icons-material/AdminPanelSettin
 import AssignmentOutlinedIcon from '@mui/icons-material/AssignmentOutlined';
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
 import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
-import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined';
 import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined';
 import {
@@ -34,12 +33,6 @@ const NAV_ITEMS = [
     path: '/cases',
     icon: <AssignmentOutlinedIcon fontSize="small" />,
     permission: Permission.VIEW_ASSIGNED_CASES,
-  },
-  {
-    label: 'Chat & Notes',
-    path: '/chat',
-    icon: <ForumOutlinedIcon fontSize="small" />,
-    permission: Permission.CHAT_ON_CASE,
   },
   {
     label: 'PIR',

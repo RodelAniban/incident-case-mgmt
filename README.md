@@ -1,12 +1,12 @@
 # Incident Case Management System
 
 Self-hosted incident case management for a SOC/IR team, built per the
-[architecture plan](./docs/PLAN.md). Phase 1 (Foundation) and Phase 2
-(Evidence Management) are implemented: auth & RBAC, the core case/ticket
-model, an immutable audit log, a starter dashboard, and encrypted,
-chain-of-custody-tracked evidence intake. Chat, PIR, and threat-intel
-modules exist as reserved schema + placeholder routes, ready to be filled
-in per the roadmap.
+[architecture plan](./docs/PLAN.md). Phases 1–3 are implemented: auth & RBAC,
+the core case/ticket model, an immutable audit log, a starter dashboard,
+encrypted chain-of-custody-tracked evidence, a rich-text case narrative with
+inline images, and real-time per-case chat & notes. PIR and threat-intel
+modules exist as reserved schema + placeholder routes, ready to be filled in
+per the roadmap.
 
 ## Stack
 
@@ -59,7 +59,8 @@ see role-scoped navigation and data.
 | Access control (RBAC) | Implemented — role → permission matrix enforced on every route |
 | Audit log | Implemented — hash-chained, tamper-evident history per case |
 | Evidence Management | Implemented — AES-256-GCM encrypted, WORM-locked intake; hash-verified download; append-only custody ledger; per-item access grants |
-| Secure Analyst Chat & Notes | Schema + stub route only (Phase 3) |
+| Case Narrative | Implemented — Word-style rich text, sanitized server-side, with encrypted inline images/screenshots |
+| Secure Analyst Chat & Notes | Implemented — real-time per-case chat over WebSocket, markdown (no links/images), audited export |
 | PIR Templates | Schema + stub route only (Phase 4) |
 | Threat Intelligence Integration | Schema + stub route only (Phase 5) |
 
@@ -110,6 +111,34 @@ lists, blockquote) plus inline images:
 - **Known limitation**: deleting an image out of the narrative doesn't delete
   its stored blob — there's no garbage collection pass in this scaffold.
 
+## Secure Analyst Chat & Notes
+
+Per-case chat (Case detail → Chat & Notes), delivered in real time over a
+NestJS WebSocket gateway (`backend/src/chat/chat.gateway.ts`):
+
+- **Structured notes**: each message can be tagged Finding / Hypothesis /
+  Action item / Shift hand-off, matching the plan's spec for structured,
+  taggable analyst notes.
+- **Markdown, not HTML**: message bodies are stored as plain markdown text —
+  there's nothing to sanitize at rest since it's never HTML in the database.
+  Rendering runs it through `marked` then a tight DOMPurify allowlist that
+  excludes both `<a>` and `<img>`, so links degrade to plain text and images
+  vanish entirely. That's `no external egress / no third-party embeds` from
+  the plan, enforced structurally rather than by convention.
+- **Two distinct permissions, on purpose**: `CHAT_ON_CASE` (L1/L2/Lead) gates
+  live viewing and posting; `EXPORT_CHAT_NOTES` (Lead/CISO/Admin) is separate
+  — CISO and Admin can't casually browse a live case chat, but can pull a
+  plain-text transcript, and doing so writes an entry to the case's audit
+  trail (`field: 'chat_export'`), matching the plan's "export requires
+  approval and is itself an audited action."
+- **Socket auth**: a raw WebSocket connection carries no session. The gateway
+  requires an explicit `join {caseId, token}` message, verifies the JWT and
+  re-runs the same `CHAT_ON_CASE` + case-team-scope check the REST endpoints
+  use, before the socket is added to that case's room — no join, no messages.
+- **Known limitation**: no retention/legal-hold engine yet (the plan calls
+  for message retention tied to case retention with a legal-hold override) —
+  messages persist indefinitely today.
+
 ## Notes for going further
 
 - `synchronize: true` in `backend/src/database/database.module.ts` is a
@@ -123,5 +152,8 @@ lists, blockquote) plus inline images:
   or streamed intake instead.
 - `@nestjs/platform-express@10.x` bundles its own `multer@2.0.2`, which has an
   open DoS advisory (deeply-nested multipart field names) only fixed by a
-  NestJS v11 major upgrade. Low risk for an internal, non-public-facing SOC
-  tool, but worth revisiting before any internet-facing deployment.
+  NestJS v11 major upgrade. `@nestjs/websockets`/`@nestjs/platform-socket.io`
+  pull in a similar tier of transitive moderate DoS-class advisories (`qs`,
+  `ajv`, `uuid`) via `@nestjs/core`. All of this is low risk for an internal,
+  non-public-facing SOC tool, but worth revisiting — likely via a NestJS v11
+  upgrade — before any internet-facing deployment.

@@ -19,8 +19,9 @@ External      Org SSO/LDAP · SIEM · TI feeds (MISP/TAXII)
 ## Core entities
 
 `Team`, `User` (role, team), `Case` (severity/category/status/assignee/SLA),
-`CaseHistoryEntry` (hash-chained audit trail), and reserved schema for
-`EvidenceItem`, `ChatMessage`, `PirReport`, `ThreatIndicator`.
+`CaseHistoryEntry` (hash-chained audit trail), `EvidenceItem` +
+`EvidenceCustodyEntry` + `EvidenceAccessGrant`, `CaseImage`, `ChatMessage`,
+and reserved schema for `PirReport` and `ThreatIndicator`.
 
 ## Access control matrix
 
@@ -49,7 +50,9 @@ only — it decides what to render, not what to allow.
 1. **Foundation** (done) — auth/RBAC, case model, audit log, dashboard
 2. **Evidence Management** (done) — AES-256-GCM intake, SHA-256 verified download,
    OS-enforced WORM lock (`chmod 0444`), per-item access grants, custody ledger
-3. **Secure Chat & Notes** — case-scoped encrypted collaboration
+3. **Secure Chat & Notes** (done) — real-time per-case chat over WebSocket,
+   tagged notes (finding/hypothesis/action-item/hand-off), markdown rendering
+   with no links or images (no external egress), audited export
 4. **PIR Templates** — root-cause template library, action-item tracking
 5. **Threat Intel Integration** — STIX/TAXII ingestion, watchlist matching
 6. **Hardening & go-live** — pen test, DR drill, compliance review

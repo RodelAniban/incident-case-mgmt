@@ -1,13 +1,5 @@
 import { ComingSoon } from '../components/ComingSoon';
 
-export const ChatPlaceholder = () => (
-  <ComingSoon
-    title="Secure Analyst Chat & Notes"
-    phase={3}
-    description="Case-scoped, encrypted collaboration with structured findings and shift hand-off notes — without leaving the platform."
-  />
-);
-
 export const PirPlaceholder = () => (
   <ComingSoon
     title="Post-Incident Review Templates"

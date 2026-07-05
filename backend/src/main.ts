@@ -1,6 +1,7 @@
 import { ClassSerializerInterceptor, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory, Reflector } from '@nestjs/core';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -12,6 +13,8 @@ async function bootstrap() {
   // Enforces @Exclude() on entities (e.g. User.passwordHash) on every response.
   app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
   app.enableCors({ origin: config.get<string>('CORS_ORIGIN', 'http://localhost:5173') });
+  // Chat's real-time delivery rides on Socket.IO, attached to this same HTTP server.
+  app.useWebSocketAdapter(new IoAdapter(app));
 
   const port = config.get<number>('PORT', 3000);
   await app.listen(port);

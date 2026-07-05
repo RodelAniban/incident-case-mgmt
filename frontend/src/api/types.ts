@@ -250,3 +250,25 @@ export interface EvidenceAccessGrant {
   reason: string | null;
   grantedAt: string;
 }
+
+export enum NoteTag {
+  FINDING = 'finding',
+  HYPOTHESIS = 'hypothesis',
+  ACTION_ITEM = 'action_item',
+  HANDOFF = 'handoff',
+}
+
+export const NOTE_TAG_LABELS: Record<NoteTag, string> = {
+  [NoteTag.FINDING]: 'Finding',
+  [NoteTag.HYPOTHESIS]: 'Hypothesis',
+  [NoteTag.ACTION_ITEM]: 'Action item',
+  [NoteTag.HANDOFF]: 'Shift hand-off',
+};
+
+export interface ChatMessage {
+  id: number;
+  body: string;
+  tag: NoteTag | null;
+  author: UserSummary;
+  ts: string;
+}
