@@ -2,6 +2,7 @@ export * from './team.entity';
 export * from './user.entity';
 export * from './case.entity';
 export * from './case-history.entity';
+export * from './case-image.entity';
 export * from './evidence-item.entity';
 export * from './evidence-custody-entry.entity';
 export * from './evidence-access-grant.entity';

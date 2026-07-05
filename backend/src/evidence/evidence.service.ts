@@ -19,7 +19,7 @@ import {
   EvidenceType,
   User,
 } from '../entities';
-import { decryptBuffer, encryptBuffer, sha256Hex } from './evidence-crypto.util';
+import { decryptBuffer, encryptBuffer, sha256Hex } from '../common/encryption.util';
 import { readWormBlob, writeWormBlob } from './evidence-storage.util';
 
 /** Roles that always retain oversight access, independent of per-item grants. */

@@ -1,4 +1,4 @@
-import { IsEnum, IsInt, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsEnum, IsInt, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { CaseCategory, CaseSeverity } from '../../entities/case.entity';
 
 export class CreateCaseDto {
@@ -6,7 +6,9 @@ export class CreateCaseDto {
   @MinLength(3)
   title: string;
 
+  /** Rich-text HTML from the narrative editor — sanitized server-side before it's ever stored. */
   @IsString()
+  @MaxLength(20000)
   @IsOptional()
   description?: string;
 

@@ -7,6 +7,7 @@ import { Case, CaseSeverity, CaseStatus, Team, User } from '../entities';
 import { AuditService } from '../audit/audit.service';
 import { CreateCaseDto } from './dto/create-case.dto';
 import { UpdateCaseDto } from './dto/update-case.dto';
+import { htmlToExcerpt, sanitizeNarrativeHtml } from './sanitize-narrative.util';
 
 export interface RequestUser {
   userId: number;
@@ -37,7 +38,7 @@ export class CasesService {
       this.cases.create({
         caseNumber,
         title: dto.title,
-        description: dto.description ?? '',
+        description: dto.description ? sanitizeNarrativeHtml(dto.description) : '',
         severity: dto.severity,
         category: dto.category,
         status: CaseStatus.NEW,
@@ -99,13 +100,7 @@ export class CasesService {
       throw new ForbiddenException(`Role '${actor.role}' cannot edit cases`);
     }
 
-    const trackedFields: Array<keyof UpdateCaseDto> = [
-      'title',
-      'description',
-      'severity',
-      'category',
-      'status',
-    ];
+    const trackedFields: Array<keyof UpdateCaseDto> = ['title', 'severity', 'category', 'status'];
     for (const field of trackedFields) {
       const nextValue = dto[field];
       if (nextValue === undefined) continue;
@@ -119,6 +114,22 @@ export class CasesService {
         newValue: String(nextValue),
       });
       (existing as any)[field] = nextValue;
+    }
+
+    // Handled separately from trackedFields: the audit entry logs a plain-text excerpt,
+    // not the full HTML, so the hash chain doesn't bloat on every narrative edit.
+    if (dto.description !== undefined) {
+      const sanitized = sanitizeNarrativeHtml(dto.description);
+      if (sanitized !== existing.description) {
+        await this.auditService.record({
+          case: existing,
+          actor: actorEntity,
+          field: 'description',
+          oldValue: htmlToExcerpt(existing.description || ''),
+          newValue: htmlToExcerpt(sanitized),
+        });
+        existing.description = sanitized;
+      }
     }
 
     if (dto.assigneeId !== undefined) {

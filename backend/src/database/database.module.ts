@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import {
   Case,
   CaseHistoryEntry,
+  CaseImage,
   ChatMessage,
   EvidenceAccessGrant,
   EvidenceCustodyEntry,
@@ -17,6 +18,7 @@ import {
 const ENTITIES = [
   Case,
   CaseHistoryEntry,
+  CaseImage,
   ChatMessage,
   EvidenceAccessGrant,
   EvidenceCustodyEntry,

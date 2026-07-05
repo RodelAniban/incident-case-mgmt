@@ -2,6 +2,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import {
   Alert,
   Box,
+  Button,
   Divider,
   IconButton,
   MenuItem,
@@ -22,6 +23,7 @@ import {
   STATUS_LABELS,
 } from '../api/types';
 import { EvidencePanel } from '../components/EvidencePanel';
+import { NarrativeEditor, NarrativeViewer } from '../components/NarrativeEditor';
 import { SeverityChip } from '../components/SeverityChip';
 
 export function CaseDetail() {
@@ -31,6 +33,10 @@ export function CaseDetail() {
   const [caseData, setCaseData] = useState<Case | null>(null);
   const [history, setHistory] = useState<CaseHistoryEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [editingNarrative, setEditingNarrative] = useState(false);
+  const [narrativeDraft, setNarrativeDraft] = useState('');
+  const [narrativeError, setNarrativeError] = useState<string | null>(null);
+  const [savingNarrative, setSavingNarrative] = useState(false);
 
   const load = async () => {
     const { data } = await apiClient.get<Case>(`/cases/${id}`);
@@ -53,6 +59,26 @@ export function CaseDetail() {
       await load();
     } catch {
       setError(`Your role cannot move this case to "${STATUS_LABELS[status]}".`);
+    }
+  };
+
+  const startEditingNarrative = () => {
+    setNarrativeDraft(caseData?.description ?? '');
+    setNarrativeError(null);
+    setEditingNarrative(true);
+  };
+
+  const onSaveNarrative = async () => {
+    setNarrativeError(null);
+    setSavingNarrative(true);
+    try {
+      await apiClient.patch(`/cases/${id}`, { description: narrativeDraft });
+      await load();
+      setEditingNarrative(false);
+    } catch {
+      setNarrativeError('Could not save the narrative — your role may not be able to edit this case.');
+    } finally {
+      setSavingNarrative(false);
     }
   };
 
@@ -105,6 +131,58 @@ export function CaseDetail() {
             </MenuItem>
           ))}
         </TextField>
+      </Paper>
+
+      <Paper variant="outlined">
+        <Box
+          sx={{
+            px: 2,
+            py: 1.5,
+            borderBottom: 1,
+            borderColor: 'divider',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+        >
+          <Typography variant="subtitle2">Narrative</Typography>
+          {can(Permission.CREATE_EDIT_CASE) &&
+            (editingNarrative ? (
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <Button size="small" onClick={() => setEditingNarrative(false)} disabled={savingNarrative}>
+                  Cancel
+                </Button>
+                <Button size="small" variant="contained" disableElevation onClick={onSaveNarrative} disabled={savingNarrative}>
+                  Save
+                </Button>
+              </Box>
+            ) : (
+              <Button size="small" onClick={startEditingNarrative}>
+                Edit
+              </Button>
+            ))}
+        </Box>
+        <Box sx={{ p: 2 }}>
+          {narrativeError && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              {narrativeError}
+            </Alert>
+          )}
+          {editingNarrative ? (
+            <NarrativeEditor
+              html={narrativeDraft}
+              caseId={caseData.id}
+              onChange={setNarrativeDraft}
+              onError={setNarrativeError}
+            />
+          ) : caseData.description ? (
+            <NarrativeViewer html={caseData.description} />
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              No narrative recorded yet.
+            </Typography>
+          )}
+        </Box>
       </Paper>
 
       <EvidencePanel caseId={caseData.id} />

@@ -3,5 +3,6 @@ dist/
 data/*.sqlite
 data/*.sqlite-*
 data/evidence/
+data/case-images/
 .env
 *.log

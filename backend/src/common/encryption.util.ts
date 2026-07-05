@@ -1,5 +1,8 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'crypto';
 
+// Shared by evidence intake and case-image intake — both are "encrypt an
+// uploaded blob at rest" with the same threat model, just different retention
+// and access rules layered on top in their respective services.
 const ALGORITHM = 'aes-256-gcm';
 
 function getKey(): Buffer {

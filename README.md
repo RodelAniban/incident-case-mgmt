@@ -82,6 +82,34 @@ standalone section:
   unconditional oversight access. Every grant, revoke, and download is
   recorded in the custody ledger (`EvidenceCustodyEntry`).
 
+## Case Narrative
+
+The case detail page has a rich-text "Narrative" field (Case detail → Edit),
+with a Word-style toolbar (paragraph styles, bold/italic/underline/strike,
+lists, blockquote) plus inline images:
+
+- **Formatting**: edited with Tiptap, sanitized server-side
+  (`backend/src/cases/sanitize-narrative.util.ts`) against a strict tag/attribute
+  allowlist before it's ever stored — pasting a `<script>` tag or an `onerror`
+  handler gets stripped, not escaped-and-displayed.
+- **Inline images**: insert via the toolbar, drag-and-drop, or paste directly
+  from the clipboard (the same gesture as pasting a screenshot into Word).
+  Images are encrypted at rest (same AES-256-GCM as evidence, now shared via
+  `backend/src/common/encryption.util.ts`) and served from a random-UUID
+  `publicId` rather than a sequential id.
+- **Why the image endpoint has no auth guard**: a plain `<img src>` can't send
+  an `Authorization` header, so `GET /api/case-images/:publicId/raw` is
+  deliberately public — access control is the UUID being unguessable, handed
+  out only via the authenticated upload endpoint to users who could already
+  edit the case. This is weaker than the evidence access-grant model on
+  purpose: these are narrative illustrations, not chain-of-custody evidence.
+  The sanitizer only ever allows `<img>` src values matching
+  `/api/case-images/<uuid>/raw` (any host) — external hotlinks, `data:` URIs,
+  and `javascript:` URIs are all rejected, closing off the obvious abuse of a
+  more permissive image allowlist (tracking pixels, XSS via crafted src).
+- **Known limitation**: deleting an image out of the narrative doesn't delete
+  its stored blob — there's no garbage collection pass in this scaffold.
+
 ## Notes for going further
 
 - `synchronize: true` in `backend/src/database/database.module.ts` is a
