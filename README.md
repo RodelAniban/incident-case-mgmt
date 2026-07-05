@@ -9,8 +9,12 @@ post-incident review reports, and threat-intelligence integration (feed
 import, per-case IOC linking, watchlist matching, TLP-gated outbound-sharing
 approval). Phase 6 (hardening & go-live) is underway — the security-hardening
 slice (rate limiting, security headers, fail-fast config validation, strict
-input validation) and a 103-test backend e2e suite covering every
-security-critical property are both done; the pen test / DR drill /
+input validation, TOTP-based MFA gating evidence access, real JWT
+revocation on logout), optional Google Sign-In (domain-gated
+auto-provisioning, server-verified ID tokens), full User & Role
+Administration (create/deactivate accounts, role/team changes, password
+resets, team management), and a 123-test backend e2e suite covering every
+security-critical property are all done; the pen test / DR drill /
 compliance review are inherently exercises against a real deployment rather
 than something to code.
 
@@ -63,6 +67,7 @@ see role-scoped navigation and data.
 | Dashboard | Implemented — KPI summary + recent cases, scoped by role |
 | Incident Ticketing | Implemented — create/list/update, field-level audit trail |
 | Access control (RBAC) | Implemented — role → permission matrix enforced on every route |
+| User & Role Administration | Implemented — full CRUD: create/deactivate accounts, change role/team, reset passwords, team management |
 | Audit log | Implemented — hash-chained, tamper-evident history per case |
 | Evidence Management | Implemented — AES-256-GCM encrypted, WORM-locked intake; hash-verified download; append-only custody ledger; per-item access grants |
 | Case Narrative | Implemented — Word-style rich text, sanitized server-side, with encrypted inline images/screenshots |
@@ -221,6 +226,62 @@ inherently cross-case:
   the same honest trade-off as evidence storage using local WORM instead of
   MinIO.
 
+## User & Role Administration
+
+Replaces the earlier "seed or edit users directly via the backend seed
+script" placeholder with a real admin UI (Admin nav → User & Role
+Administration), backed by `POST/PATCH /users`, `POST /users/:id/reset-password`,
+and `GET/POST /teams` — all `MANAGE_USERS` (Admin-only), per the matrix:
+
+- **Admin never picks a password for someone else.** Creating a user or
+  resetting one's password generates a random one server-side and returns
+  it exactly once in the API response, for the admin to hand off out of
+  band — never emailed, never logged, never retrievable again.
+- **Role and team changes take effect on the user's very next request, not
+  their next login.** `JwtStrategy` already re-reads the live user row on
+  every request (see MFA/JWT-revocation above); it now also returns the
+  *current* role/team from that row instead of the JWT's original claims,
+  so a promotion or reassignment applies immediately even to a token
+  that's already been sitting in someone's browser for hours.
+- **Deactivating an account is real, not cosmetic**: it's rejected at the
+  next login attempt *and* kills any session the account is mid-use in
+  right now. This uses a `sessionVersion` counter embedded in every JWT
+  (`sv`) rather than an invalidation timestamp — comparing `iat` against a
+  timestamp is racy at 1-second JWT resolution (a reset and a fresh login
+  can land in the same wall-clock second); exact integer equality against
+  a counter that only ever increments has no such ambiguity. The same
+  counter backs password resets.
+- **Two hard-coded lockout guards, both in `UsersService.updateUser`**: an
+  admin can't change their own role or active status (ask another admin),
+  and the last active Admin account can never be deactivated or demoted —
+  in practice the self-protection rule alone already guarantees this in
+  sequential use (there's no "someone else" to act on if you're the only
+  admin), but the count check is cheap defense-in-depth against a
+  narrow concurrent-request race and against this invariant surviving
+  future changes to the self-protection rule.
+- **No accounts are ever hard-deleted.** `CaseHistoryEntry.actor`,
+  `EvidenceCustodyEntry.actor`, and similar FKs point at users throughout
+  the case history — deleting a row would either cascade-destroy audit
+  history or leave it pointing nowhere. Disabling (`isActive: false`)
+  is the only removal path, matching how real incident-response tooling
+  has to preserve "who did this" forever.
+- **Found and fixed while building this**: `GET /users` (and the new
+  create/update endpoints) were leaking `mfaSecretCiphertext`/`Iv`/`AuthTag`
+  and the session counter, because the original handler stripped only
+  `passwordHash` by name via object spread — which silently stops
+  protecting a field the moment `@Exclude()` is the only thing guarding it
+  server-side. Fixed with an explicit allow-list (`toSafeUser` in
+  `users.service.ts`) instead of a block-list, and turned into a permanent
+  regression test (`security.e2e-spec.ts`) that checks the whole sensitive
+  set, not just the one field that was already handled.
+- **Known limitation**: no persisted audit trail for admin actions
+  themselves (role changes, deactivations, password resets) — only
+  case-scoped actions get the hash-chained ledger described above. These
+  actions are logged via the server's own process logs, not a queryable,
+  tamper-evident record. Building that would mean a second, parallel audit
+  system (case history is intentionally case-scoped), which felt like a
+  separate feature rather than part of "admin CRUD."
+
 ## Security Hardening (Phase 6, in progress)
 
 - **Rate limiting**: a global ceiling (100 req/min/IP via `@nestjs/throttler`)
@@ -250,10 +311,70 @@ inherently cross-case:
   version bump (`@nestjs/cli@11`, `@nestjs/typeorm@11`, `vite@8`) — the
   remaining advisories are the same transitive, DoS-class, low-risk-for-an-
   internal-tool ones already called out below.
-- **Not yet done**: MFA enforcement (the `User.mfaEnabled` column exists but
-  nothing sets or checks it, despite the plan requiring MFA for evidence
-  access) and JWT revocation/blacklist (logout is client-side-only — a stolen
-  token remains valid until it expires).
+- **MFA (TOTP) gating evidence access**: `POST /auth/mfa/setup` generates a
+  secret (`otplib`) encrypted at rest with the same AES-256-GCM key as
+  evidence/case-images, returns a QR code (`qrcode`) for the user's
+  authenticator app; `POST /auth/mfa/verify` confirms enrollment with a real
+  code before `User.mfaEnabled` ever flips true — an abandoned setup can't
+  accidentally lock an account into two-step login. Once enabled, `POST
+  /auth/login` stops short of a real session and returns a short-lived
+  `mfaToken` instead; `POST /auth/mfa/login-verify` exchanges a valid code
+  for the actual `accessToken`. `MfaRequiredGuard`
+  (`backend/src/common/guards/mfa-required.guard.ts`) then gates the two
+  endpoints that actually touch evidence content — upload and download —
+  checked against the live DB row, not a JWT claim, so enabling/disabling
+  mid-session takes effect immediately without a fresh login. Disabling MFA
+  itself requires a valid code, not just an authenticated session — a
+  stolen-but-unlocked token can't turn MFA off on its own. Manage it under
+  the account-security icon (🔒) in the top bar.
+- **Real JWT revocation on logout**: every issued token now carries a random
+  `jti`; `POST /auth/logout` records that `jti` in a `RevokedToken` table
+  (pruned lazily on each write once its own token would have expired anyway,
+  so it never grows unbounded), and `JwtStrategy` rejects any request
+  bearing a revoked `jti`. Revocation is per-token, not per-account — logging
+  out in one tab doesn't invalidate a session open in another. Previously,
+  logout only cleared the browser's local storage; a copied bearer token
+  stayed valid until its natural expiry regardless.
+
+## Google Sign-In (SSO)
+
+Optional — disabled unless configured (`GOOGLE_CLIENT_ID`/`VITE_GOOGLE_CLIENT_ID`,
+see both `.env.example` files). Not part of the original 6-phase roadmap
+(the plan only ever said "SSO/SAML later") — added as its own slice on top:
+
+- **The backend never trusts a client-asserted email.** The frontend
+  ("Sign in with Google" via `@react-oauth/google`, Google's own Identity
+  Services widget) only ever hands the API a Google-issued ID token;
+  `POST /auth/google` verifies it server-side with `google-auth-library`
+  against `GOOGLE_CLIENT_ID` before looking at anything inside it, and
+  rejects tokens where Google hasn't itself verified the email
+  (`email_verified`).
+- **Existing accounts can always sign in this way** if the verified email
+  matches — SSO is just an alternate credential, not a separate identity.
+  It reuses the exact same `login()` the password flow calls, so an account
+  with MFA enabled still gets the same two-step challenge afterward
+  (`mfaRequired`/`mfaToken`) — which credential got you there doesn't change
+  what evidence access requires.
+- **A brand-new email only auto-provisions on an allow-listed domain**
+  (`GOOGLE_SSO_ALLOWED_DOMAIN`, comma-separated). Checked against the
+  verified email's own domain suffix rather than Google's `hd` claim,
+  deliberately — personal Gmail accounts never carry an `hd` claim at all
+  (only Workspace-managed ones do), so `hd` alone can't support "allow any
+  @gmail.com account," which is a real, intended use of this feature, not
+  just enterprise Workspace SSO. Auto-provisioned accounts get `Analyst L1`
+  with no team — the lowest-privilege role in the matrix — and get a
+  random, never-surfaced password (satisfies the `passwordHash` column;
+  nobody's meant to ever use it). An Admin still has to assign a real
+  team/role before the account is useful for much.
+- **An email outside the allow-list, with no existing account, gets a clear
+  403** ("ask an admin to create an account first") rather than either
+  silently failing or auto-creating an unintended account.
+- **Deliberate exception to this app's no-external-egress stance**: loading
+  Google's Identity Services script is the one place this app talks to a
+  third party by design — SSO inherently requires it. The
+  `GoogleOAuthProvider` wrapper (`frontend/src/main.tsx`) is only mounted
+  when `VITE_GOOGLE_CLIENT_ID` is set, so a deployment that doesn't want
+  Google involved at all never loads that script.
 
 ## Automated Test Suite
 
@@ -266,7 +387,7 @@ cd backend
 npm run test:e2e
 ```
 
-103 tests across 11 spec files (`backend/test/*.e2e-spec.ts`), all boot a real
+123 tests across 14 spec files (`backend/test/*.e2e-spec.ts`), all boot a real
 Nest app (`test/utils/test-app.ts`) — real guards, real TypeORM, real
 AES-256-GCM crypto — against an isolated in-memory SQLite DB and a per-test
 temp directory for evidence/case-image blobs, rather than mocking anything
@@ -294,6 +415,36 @@ security-relevant:
   TLP-gated share-request lifecycle end-to-end and cross-cutting properties
   (mass-assignment rejection, no `passwordHash`/evidence-internals leakage,
   security headers present) respectively.
+- **`mfa.e2e-spec.ts`** drives the real TOTP lifecycle — computing actual
+  codes with `otplib` rather than stubbing verification — through enrollment,
+  wrong-code rejection, the two-step login exchange, disable, and the
+  evidence-upload 403 with its actionable message before enrollment. The
+  shared `enableMfaForActor()` test helper (`test/utils/test-app.ts`) drives
+  the same real setup→verify flow so `evidence.e2e-spec.ts` and
+  `security.e2e-spec.ts` exercise `MfaRequiredGuard` for real instead of
+  stubbing `mfaEnabled` directly into the DB.
+- **`auth.e2e-spec.ts`**'s `logout / token revocation` block confirms a
+  logged-out token is rejected on its very next request, and that revoking
+  one token doesn't affect a second, independently-issued token for the same
+  user — proving revocation is per-token, not an accidental per-account
+  ban.
+- **`google-sso.e2e-spec.ts`** stubs only the one boundary that would
+  otherwise require a real signed credential and live internet access —
+  `OAuth2Client.prototype.verifyIdToken` — and exercises everything
+  downstream for real: existing-user login, MFA-after-SSO via the same
+  `login()` password auth uses, the `email_verified` check, domain-gated
+  auto-provisioning (and its rejection), and that re-authenticating with the
+  same Google identity logs into the same account rather than creating a
+  second one.
+- **`users-admin.e2e-spec.ts`** covers the full admin CRUD lifecycle:
+  Admin-only gating across every endpoint, a generated password that
+  actually logs in, duplicate-email/duplicate-team rejection, a role+team
+  change applying to an already-issued token's very next request (proving
+  `JwtStrategy` reads the live row, not the JWT claim), self-lockout
+  prevention, and — the two properties easiest to get wrong — that
+  deactivating a user kills a session they're already using (not just
+  future logins) and that a password reset does the same via the
+  `sessionVersion` counter.
 - Rate limiting is disabled for the suite via an env flag read at
   `AppModule` decoration time (`DISABLE_THROTTLING`, set in
   `test/env-setup.ts`) — seeding six fixture users per spec file would

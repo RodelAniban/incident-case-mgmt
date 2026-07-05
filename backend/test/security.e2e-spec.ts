@@ -1,5 +1,5 @@
 import * as request from 'supertest';
-import { auth, createCase, createTestApp, seedRoster, TestAppContext, TestRoster } from './utils/test-app';
+import { auth, createCase, createTestApp, enableMfaForActor, seedRoster, TestAppContext, TestRoster } from './utils/test-app';
 
 describe('cross-cutting security properties', () => {
   let ctx: TestAppContext;
@@ -9,6 +9,7 @@ describe('cross-cutting security properties', () => {
   beforeAll(async () => {
     ctx = await createTestApp();
     roster = await seedRoster(ctx);
+    await enableMfaForActor(ctx, roster.analyst1); // evidence upload below is MFA-gated
     caseId = (await createCase(ctx, roster.analyst1.token, roster.analyst1.teamId!)).id;
   });
 
@@ -31,7 +32,17 @@ describe('cross-cutting security properties', () => {
     expect(JSON.stringify(res.body)).toMatch(/isAdmin/);
   });
 
-  it('never returns passwordHash from any endpoint that touches a user record', async () => {
+  it('never returns passwordHash or MFA-secret internals from any endpoint that touches a user record', async () => {
+    // Found while building the admin user-management UI: the old
+    // `{ passwordHash: _, ...rest }` spread in UsersController stripped only
+    // the one field it named — mfaSecretCiphertext/Iv/AuthTag and
+    // sessionVersion leaked straight through, because object spread ignores
+    // entity-level @Exclude() once the value is a plain object instead of a
+    // User instance. Fixed via an explicit allow-list (toSafeUser in
+    // users.service.ts) — this asserts the whole sensitive set, not just
+    // passwordHash, so a *new* sensitive column added later can't silently
+    // leak the same way.
+    const sensitiveFields = ['passwordHash', 'mfaSecretCiphertext', 'mfaSecretIv', 'mfaSecretAuthTag', 'sessionVersion'];
     const endpoints: Array<() => Promise<request.Response>> = [
       () => request(ctx.httpServer as never).get('/api/cases').set(auth(roster.lead.token)),
       () => request(ctx.httpServer as never).get(`/api/cases/${caseId}`).set(auth(roster.lead.token)),
@@ -41,7 +52,9 @@ describe('cross-cutting security properties', () => {
 
     for (const call of endpoints) {
       const res = await call();
-      expect(JSON.stringify(res.body)).not.toContain('passwordHash');
+      for (const field of sensitiveFields) {
+        expect(JSON.stringify(res.body)).not.toContain(field);
+      }
     }
   });
 

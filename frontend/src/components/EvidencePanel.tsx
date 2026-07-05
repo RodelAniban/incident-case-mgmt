@@ -23,6 +23,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import { isAxiosError } from 'axios';
 import { FormEvent, useEffect, useState } from 'react';
 import { apiClient } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
@@ -38,6 +39,32 @@ import {
 } from '../api/types';
 
 const LEADERSHIP_ROLES = [Role.IR_LEAD, Role.CISO_MANAGER, Role.ADMIN];
+
+// The MFA-required guard and the RBAC guard both return 403, but only the
+// former has something actionable to say — surface the server's own message
+// instead of a generic "forbidden" so the "set it up under Account Security"
+// hint (see backend/src/common/guards/mfa-required.guard.ts) actually reaches the user.
+function describeError(err: unknown, fallback: string): string {
+  if (isAxiosError(err) && err.response?.status === 403 && typeof err.response.data?.message === 'string') {
+    return err.response.data.message;
+  }
+  return fallback;
+}
+
+// Download requests use responseType: 'blob', so axios never parses a 403's
+// JSON body into err.response.data — it's a Blob instead. Read it out by hand
+// so the same actionable MFA-required message reaches this error path too.
+async function describeDownloadError(err: unknown, fallback: string): Promise<string> {
+  if (isAxiosError(err) && err.response?.status === 403 && err.response.data instanceof Blob) {
+    try {
+      const body = JSON.parse(await err.response.data.text());
+      if (typeof body.message === 'string') return body.message;
+    } catch {
+      // fall through to fallback
+    }
+  }
+  return fallback;
+}
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -97,8 +124,8 @@ export function EvidencePanel({ caseId }: { caseId: number }) {
       setTags('');
       setNotes('');
       await load();
-    } catch {
-      setUploadError('Upload failed — check the file and try again.');
+    } catch (err) {
+      setUploadError(describeError(err, 'Upload failed — check the file and try again.'));
     } finally {
       setSaving(false);
     }
@@ -120,8 +147,8 @@ export function EvidencePanel({ caseId }: { caseId: number }) {
       URL.revokeObjectURL(url);
       setDownloadTarget(null);
       setDownloadReason('');
-    } catch {
-      setDownloadError('You do not have access to this item, or no reason was given.');
+    } catch (err) {
+      setDownloadError(await describeDownloadError(err, 'You do not have access to this item, or no reason was given.'));
     }
   };
 

@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as request from 'supertest';
-import { auth, createCase, createTestApp, seedRoster, TestAppContext, TestRoster } from './utils/test-app';
+import { auth, createCase, createTestApp, enableMfaForActor, seedRoster, TestAppContext, TestRoster } from './utils/test-app';
 
 describe('evidence', () => {
   let ctx: TestAppContext;
@@ -11,6 +11,12 @@ describe('evidence', () => {
   beforeAll(async () => {
     ctx = await createTestApp();
     roster = await seedRoster(ctx);
+    // Upload/download are MFA-gated (MfaRequiredGuard) — enroll everyone this
+    // spec exercises those endpoints as, so failures below are about the
+    // property under test, not an incidental 403 from missing MFA.
+    await Promise.all(
+      [roster.analyst1, roster.analyst2, roster.lead, roster.ciso].map((actor) => enableMfaForActor(ctx, actor)),
+    );
     caseId = (await createCase(ctx, roster.analyst1.token, roster.analyst1.teamId!)).id;
   });
 

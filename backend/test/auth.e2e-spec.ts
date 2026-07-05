@@ -1,6 +1,6 @@
 import * as request from 'supertest';
 import { AuthController } from '../src/auth/auth.controller';
-import { createTestApp, seedRoster, TestAppContext, TestRoster } from './utils/test-app';
+import { auth, createTestApp, seedRoster, TestAppContext, TestRoster } from './utils/test-app';
 
 describe('auth', () => {
   let ctx: TestAppContext;
@@ -74,6 +74,46 @@ describe('auth', () => {
   it("doesn't leak passwordHash for any user in the roster via the login response", () => {
     Object.values(roster).forEach((actor) => {
       expect(actor.token).toEqual(expect.any(String));
+    });
+  });
+
+  describe('logout / token revocation', () => {
+    it('rejects the exact token used to log out, once it has been revoked', async () => {
+      const login = await request(ctx.httpServer as never)
+        .post('/api/auth/login')
+        .send({ email: 'auditor@test.local', password: 'TestPassword123!' });
+      const token = login.body.accessToken;
+
+      await request(ctx.httpServer as never).get('/api/cases').set(auth(token)).expect(200);
+
+      const logoutRes = await request(ctx.httpServer as never).post('/api/auth/logout').set(auth(token));
+      expect(logoutRes.status).toBe(201);
+      expect(logoutRes.body).toEqual({ loggedOut: true });
+
+      const afterLogout = await request(ctx.httpServer as never).get('/api/cases').set(auth(token));
+      expect(afterLogout.status).toBe(401);
+    });
+
+    it('only revokes that one token — a second, independently-issued token for the same user keeps working', async () => {
+      const first = await request(ctx.httpServer as never)
+        .post('/api/auth/login')
+        .send({ email: 'admin@test.local', password: 'TestPassword123!' });
+      const second = await request(ctx.httpServer as never)
+        .post('/api/auth/login')
+        .send({ email: 'admin@test.local', password: 'TestPassword123!' });
+
+      await request(ctx.httpServer as never).post('/api/auth/logout').set(auth(first.body.accessToken)).expect(201);
+
+      const firstAfter = await request(ctx.httpServer as never).get('/api/cases').set(auth(first.body.accessToken));
+      expect(firstAfter.status).toBe(401);
+
+      const secondAfter = await request(ctx.httpServer as never).get('/api/cases').set(auth(second.body.accessToken));
+      expect(secondAfter.status).toBe(200);
+    });
+
+    it('requires authentication to log out at all', async () => {
+      const res = await request(ctx.httpServer as never).post('/api/auth/logout');
+      expect(res.status).toBe(401);
     });
   });
 });

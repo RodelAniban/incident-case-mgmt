@@ -1,5 +1,6 @@
 export * from './team.entity';
 export * from './user.entity';
+export * from './revoked-token.entity';
 export * from './case.entity';
 export * from './case-history.entity';
 export * from './case-image.entity';

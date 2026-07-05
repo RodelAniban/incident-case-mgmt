@@ -1,6 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import * as fs from 'fs';
+import { authenticator } from 'otplib';
 import * as os from 'os';
 import * as path from 'path';
 import * as request from 'supertest';
@@ -122,6 +123,27 @@ export async function seedRoster(ctx: TestAppContext): Promise<TestRoster> {
 
 export function auth(token: string) {
   return { Authorization: `Bearer ${token}` };
+}
+
+/**
+ * Evidence upload/download are gated behind MFA (MfaRequiredGuard) — this
+ * drives the real enrollment flow (setup → compute a valid code from the
+ * returned secret → verify) so evidence tests exercise actual guard
+ * behavior instead of writing mfaEnabled=true directly into the DB.
+ */
+export async function enableMfaForActor(ctx: TestAppContext, actor: TestActor): Promise<void> {
+  const setupRes = await request(ctx.httpServer as never).post('/api/auth/mfa/setup').set(auth(actor.token));
+  if (setupRes.status !== 201) {
+    throw new Error(`MFA setup failed for ${actor.email}: ${JSON.stringify(setupRes.body)}`);
+  }
+  const code = authenticator.generate(setupRes.body.secret);
+  const verifyRes = await request(ctx.httpServer as never)
+    .post('/api/auth/mfa/verify')
+    .set(auth(actor.token))
+    .send({ code });
+  if (verifyRes.status !== 201) {
+    throw new Error(`MFA verify failed for ${actor.email}: ${JSON.stringify(verifyRes.body)}`);
+  }
 }
 
 export async function createCase(

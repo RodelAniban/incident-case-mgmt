@@ -154,6 +154,13 @@ export interface UserSummary {
   name: string;
   role: Role;
   team: Team | null;
+  mfaEnabled: boolean;
+}
+
+/** Shape returned by the admin-only /users endpoints — a superset of UserSummary. */
+export interface AdminUser extends UserSummary {
+  isActive: boolean;
+  createdAt: string;
 }
 
 export interface Case {

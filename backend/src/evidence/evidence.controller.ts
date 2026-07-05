@@ -20,6 +20,7 @@ import { memoryStorage } from 'multer';
 import { RequestUser } from '../cases/cases.service';
 import { RequirePermissions } from '../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { MfaRequiredGuard } from '../common/guards/mfa-required.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { Permission } from '../common/permissions';
 import { CreateEvidenceDto } from './dto/create-evidence.dto';
@@ -36,6 +37,7 @@ export class EvidenceController {
 
   @Post()
   @RequirePermissions(Permission.UPLOAD_EVIDENCE)
+  @UseGuards(MfaRequiredGuard)
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: MAX_UPLOAD_BYTES } }))
   upload(
     @UploadedFile() file: Express.Multer.File,
@@ -68,6 +70,7 @@ export class EvidenceController {
 
   @Get(':id/download')
   @RequirePermissions(Permission.DOWNLOAD_EVIDENCE)
+  @UseGuards(MfaRequiredGuard)
   async download(
     @Param('id', ParseIntPipe) id: number,
     @Query('reason') reason: string,

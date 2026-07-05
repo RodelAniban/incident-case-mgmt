@@ -1,6 +1,7 @@
 import AdminPanelSettingsOutlinedIcon from '@mui/icons-material/AdminPanelSettingsOutlined';
 import AssignmentOutlinedIcon from '@mui/icons-material/AssignmentOutlined';
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined';
 import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined';
 import {
@@ -110,8 +111,18 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <Avatar sx={{ width: 32, height: 32, fontSize: '0.85rem' }}>
                   {user.name.charAt(0)}
                 </Avatar>
+                <Tooltip title="Account security">
+                  <IconButton
+                    size="small"
+                    aria-label="Account security"
+                    onClick={() => navigate('/account/security')}
+                    color={location.pathname === '/account/security' ? 'primary' : 'default'}
+                  >
+                    <LockOutlinedIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
                 <Tooltip title="Log out">
-                  <IconButton size="small" onClick={logout}>
+                  <IconButton size="small" aria-label="Log out" onClick={logout}>
                     <LogoutOutlinedIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
