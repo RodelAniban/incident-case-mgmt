@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from 'fs';
+import { chmodSync, createReadStream, createWriteStream, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 
 function storageRoot(): string {
@@ -10,22 +10,28 @@ function storageDirFor(caseId: number): string {
 }
 
 /**
- * Writes an encrypted blob and immediately locks it read-only, simulating the
- * WORM/retention-locked object storage called for in the architecture plan.
- * Returns a storageRef relative to EVIDENCE_STORAGE_DIR.
+ * Opens a write stream at a fresh WORM path (refusing to ever overwrite an
+ * existing blob) and hands it back unlocked — the caller streams ciphertext
+ * into it, then calls lockWormBlob() once writing has actually finished.
+ * Splitting "open for write" from "lock" means a failed/partial write never
+ * gets chmod'd read-only; the caller is expected to delete the partial file
+ * on error instead.
  */
-export function writeWormBlob(caseId: number, filename: string, data: Buffer): string {
+export function openWormBlobForWrite(caseId: number, filename: string): { stream: NodeJS.WritableStream; path: string; storageRef: string } {
   const dir = storageDirFor(caseId);
   mkdirSync(dir, { recursive: true });
   const path = join(dir, filename);
   if (existsSync(path)) {
     throw new Error(`Evidence blob already exists at ${path} — refusing to overwrite a write-once original`);
   }
-  writeFileSync(path, data);
-  chmodSync(path, 0o444);
-  return join(String(caseId), filename);
+  return { stream: createWriteStream(path), path, storageRef: join(String(caseId), filename) };
 }
 
-export function readWormBlob(storageRef: string): Buffer {
-  return readFileSync(join(storageRoot(), storageRef));
+/** Locks a just-written blob read-only — call only once its write stream has fully flushed and closed. */
+export function lockWormBlob(storageRef: string): void {
+  chmodSync(join(storageRoot(), storageRef), 0o444);
+}
+
+export function readWormBlobStream(storageRef: string): NodeJS.ReadableStream {
+  return createReadStream(join(storageRoot(), storageRef));
 }

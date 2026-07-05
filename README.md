@@ -15,10 +15,11 @@ auto-provisioning, server-verified ID tokens), full User & Role
 Administration (create/deactivate accounts, role/team changes, password
 resets, team management) with its own hash-chained admin action audit
 trail, real TypeORM migrations in place of `synchronize: true`, a NestJS
-v11 upgrade that took `npm audit` from 30 findings to 0, and a 128-test
-backend e2e suite covering every security-critical property are all done;
-the pen test / DR drill / compliance review are inherently exercises
-against a real deployment rather than something to code.
+v11 upgrade that took `npm audit` from 30 findings to 0, streamed (not
+memory-buffered) evidence intake for multi-GB forensic files, and a
+129-test backend e2e suite covering every security-critical property are
+all done; the pen test / DR drill / compliance review are inherently
+exercises against a real deployment rather than something to code.
 
 ## Stack
 
@@ -90,11 +91,37 @@ standalone section:
   built-in auth tag is checked (catches tampering before anything else runs),
   then the SHA-256 is re-verified against the original. Any mismatch fails
   closed with a 500, never silently serves altered content.
+- **Streamed end to end, not buffered in memory** — evidence can legitimately
+  be a multi-GB disk image or memory dump, so neither direction ever holds
+  the whole file in a `Buffer`:
+  - **Upload**: `FileInterceptor` uses multer's `diskStorage`, which streams
+    the incoming request straight to a temp file as it arrives. That temp
+    file is then re-streamed through a single pipeline
+    (`encryptStreamToFile` in `common/encryption.util.ts`) that hashes and
+    encrypts it in one pass straight into its final WORM location, and the
+    temp file is deleted immediately after.
+  - **Download**: can't stream straight to the HTTP response the same way —
+    AES-GCM's auth tag is only checked once the *entire* ciphertext has been
+    processed, so streaming decrypted bytes to the client as they come out
+    would risk serving tampered plaintext before the tag check has a chance
+    to fail. `decryptStreamToFile` instead decrypts to a temp file first;
+    only once that's done *and* the SHA-256 re-check has passed does the
+    controller stream the verified temp file to the response — preserving
+    the exact same fail-closed guarantee as before, just without ever
+    materializing the full file in memory to get there.
+  - Temp files clean up via the response's `finish` event, not `close` —
+    `close` tracks the underlying TCP connection, which HTTP keep-alive can
+    leave open well past the response completing, so a `close`-only cleanup
+    left temp files behind in testing until this was caught and fixed.
 - **Per-item access**: being on the case team isn't enough. Analyst L2 can
   only download evidence they collected themselves, or an item an IR Lead /
   CISO / Admin has explicitly granted them. Leadership roles retain
   unconditional oversight access. Every grant, revoke, and download is
   recorded in the custody ledger (`EvidenceCustodyEntry`).
+- **Known limitation**: case-narrative inline images (screenshots pasted into
+  the rich-text editor) still use the simple `memoryStorage()` path — they're
+  always small, browser-pasted images, never multi-GB forensic files, so the
+  streaming treatment above is scoped to evidence intake specifically.
 
 ## Case Narrative
 
@@ -422,7 +449,7 @@ cd backend
 npm run test:e2e
 ```
 
-128 tests across 15 spec files (`backend/test/*.e2e-spec.ts`), all boot a real
+129 tests across 15 spec files (`backend/test/*.e2e-spec.ts`), all boot a real
 Nest app (`test/utils/test-app.ts`) — real guards, real TypeORM, real
 AES-256-GCM crypto — against an isolated in-memory SQLite DB and a per-test
 temp directory for evidence/case-image blobs, rather than mocking anything
@@ -437,8 +464,12 @@ security-relevant:
   `docs/PLAN.md` as data-driven assertions (8 actions × 6 roles).
 - **`evidence.e2e-spec.ts`** includes a real tamper-detection test: it flips
   a byte in the WORM-locked ciphertext on disk and asserts download fails
-  closed (500), plus a WORM permission check (`0o444`) and the full per-item
-  access-grant lifecycle (grant, use, revoke, leadership bypass).
+  closed (500), plus a WORM permission check (`0o444`), the full per-item
+  access-grant lifecycle (grant, use, revoke, leadership bypass), and a
+  multi-megabyte upload/download round trip (spanning many stream chunks,
+  not just one) that also asserts neither the multer upload temp file nor
+  the download's decrypt-staging temp file is left behind afterward — this
+  is the test that caught the `close`-vs-`finish` cleanup bug above.
 - **`chat.e2e-spec.ts`** opens a real Socket.IO connection via
   `socket.io-client` against a listening server and confirms a message
   posted over REST arrives over the socket — not just that the REST side
@@ -553,9 +584,9 @@ migrations, in dev, test, and prod alike:
 - The RBAC matrix lives in `backend/src/common/permissions.ts` and is mirrored
   (read-only, UI-gating purposes) in `frontend/src/api/types.ts`. The API is
   always the enforcement point.
-- Evidence upload buffers the whole file in memory (`multer.memoryStorage()`)
-  — fine for the scaffold, but real disk images / memory dumps need chunked
-  or streamed intake instead.
+- **Evidence upload/download now stream end to end instead of buffering the
+  whole file in memory** — see the Evidence Management section above for
+  how.
 - **Upgraded to NestJS v11** (all `@nestjs/*` packages, Express v5 under the
   hood) specifically to clear the `multer`/`qs`/`ajv`/`uuid` transitive
   DoS-class advisories flagged above in earlier phases — `npm audit` went

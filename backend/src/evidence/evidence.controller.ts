@@ -15,8 +15,12 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { randomUUID } from 'crypto';
 import { Response } from 'express';
-import { memoryStorage } from 'multer';
+import { createReadStream } from 'fs';
+import { rm } from 'fs/promises';
+import { diskStorage } from 'multer';
+import { tmpdir } from 'os';
 import { RequestUser } from '../cases/cases.service';
 import { RequirePermissions } from '../common/decorators/permissions.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -27,8 +31,11 @@ import { CreateEvidenceDto } from './dto/create-evidence.dto';
 import { GrantAccessDto } from './dto/grant-access.dto';
 import { EvidenceService } from './evidence.service';
 
-// Scaffold limit — real disk images / memory dumps need chunked or streamed intake, not this endpoint.
-const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
+// Evidence can legitimately be a multi-GB disk image or memory dump, so
+// intake streams straight to a temp file on disk (multer diskStorage)
+// instead of buffering the whole upload in memory — this limit is an
+// operational cap, not a memory-safety one.
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024 * 1024;
 
 @Controller('evidence')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -38,7 +45,19 @@ export class EvidenceController {
   @Post()
   @RequirePermissions(Permission.UPLOAD_EVIDENCE)
   @UseGuards(MfaRequiredGuard)
-  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: MAX_UPLOAD_BYTES } }))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      // diskStorage streams the incoming upload straight to a temp file as
+      // it arrives, rather than accumulating it in memory the way
+      // memoryStorage does — EvidenceService.upload() re-streams that temp
+      // file through encryption into its final WORM location and deletes it.
+      storage: diskStorage({
+        destination: tmpdir(),
+        filename: (_req, _file, cb) => cb(null, `evidence-upload-${randomUUID()}`),
+      }),
+      limits: { fileSize: MAX_UPLOAD_BYTES },
+    }),
+  )
   upload(
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: CreateEvidenceDto,
@@ -77,13 +96,30 @@ export class EvidenceController {
     @Req() req: { user: RequestUser },
     @Res() res: Response,
   ) {
-    const { buffer, item } = await this.evidenceService.download(id, reason, req.user);
+    // By the time this resolves, evidenceService.download() has already
+    // decrypted to a temp file and confirmed the SHA-256 matches — nothing
+    // is streamed to the client until integrity is proven, preserving the
+    // existing fail-closed guarantee even though this is no longer one Buffer.
+    const { tempFilePath, item } = await this.evidenceService.download(id, reason, req.user);
     res.set({
       'Content-Type': item.mimeType || 'application/octet-stream',
       'Content-Disposition': `attachment; filename="${item.originalFilename}"`,
-      'Content-Length': String(buffer.length),
+      'Content-Length': String(item.sizeBytes),
     });
-    res.send(buffer);
+    const cleanup = () => {
+      rm(tempFilePath, { force: true }).catch(() => {});
+    };
+    const stream = createReadStream(tempFilePath);
+    stream.on('error', cleanup);
+    // 'finish' — not just 'close' — because 'close' tracks the underlying
+    // TCP connection, which HTTP keep-alive can leave open well past this
+    // response completing; 'finish' fires as soon as the response itself
+    // has been fully written, which is the actual "safe to delete" moment.
+    // 'close' stays too, for the early-disconnect case where the client
+    // aborts mid-stream and 'finish' never fires at all.
+    res.on('finish', cleanup);
+    res.on('close', cleanup);
+    stream.pipe(res);
   }
 
   @Get(':id/access')

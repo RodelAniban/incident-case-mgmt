@@ -7,6 +7,10 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
+import { createReadStream, createWriteStream } from 'fs';
+import { rm } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { Repository } from 'typeorm';
 import { CasesService, RequestUser } from '../cases/cases.service';
 import { Permission, roleHasPermission } from '../common/permissions';
@@ -19,8 +23,8 @@ import {
   EvidenceType,
   User,
 } from '../entities';
-import { decryptBuffer, encryptBuffer, sha256Hex } from '../common/encryption.util';
-import { readWormBlob, writeWormBlob } from './evidence-storage.util';
+import { decryptStreamToFile, encryptStreamToFile } from '../common/encryption.util';
+import { lockWormBlob, openWormBlobForWrite, readWormBlobStream } from './evidence-storage.util';
 
 /** Roles that always retain oversight access, independent of per-item grants. */
 const LEADERSHIP_ROLES = [Role.IR_LEAD, Role.CISO_MANAGER, Role.ADMIN];
@@ -35,6 +39,15 @@ export class EvidenceService {
     private readonly casesService: CasesService,
   ) {}
 
+  /**
+   * `params.file` comes from multer's diskStorage, not memoryStorage — the
+   * upload body was already streamed to a temp file by the time this runs,
+   * rather than held as one big Buffer. This re-streams that temp file
+   * through encryption straight into its final WORM location, so neither
+   * the plaintext nor the ciphertext is ever fully materialized in memory —
+   * the actual point, for evidence that can be a multi-GB disk image or
+   * memory dump rather than a small document.
+   */
   async upload(params: {
     caseId: number;
     type: EvidenceType;
@@ -47,9 +60,24 @@ export class EvidenceService {
     const kase = await this.casesService.findOneScoped(params.caseId, params.actor);
     const actorEntity = await this.users.findOneOrFail({ where: { id: params.actor.userId } });
 
-    const sha256 = sha256Hex(params.file.buffer);
-    const { ciphertext, iv, authTag } = encryptBuffer(params.file.buffer);
-    const storageRef = writeWormBlob(kase.id, `${randomUUID()}.bin`, ciphertext);
+    const { stream: destination, path: wormPath, storageRef } = openWormBlobForWrite(kase.id, `${randomUUID()}.bin`);
+    let iv: string;
+    let authTag: string;
+    let sha256: string;
+    let sizeBytes: number;
+    try {
+      const source = createReadStream(params.file.path);
+      ({ iv, authTag, sha256, sizeBytes } = await encryptStreamToFile(source, destination));
+      lockWormBlob(storageRef);
+    } catch (err) {
+      // Never leave a half-written blob lying around unlocked — WORM means
+      // "the original write succeeded and is now immutable," not "there's
+      // a file here that might be truncated or corrupt."
+      await rm(wormPath, { force: true });
+      throw err;
+    } finally {
+      await rm(params.file.path, { force: true });
+    }
 
     const item = await this.items.save(
       this.items.create({
@@ -58,7 +86,7 @@ export class EvidenceService {
         source: params.source ?? null,
         originalFilename: params.file.originalname,
         mimeType: params.file.mimetype ?? null,
-        sizeBytes: params.file.size,
+        sizeBytes,
         sha256,
         storageRef,
         encryptionIv: iv,
@@ -99,7 +127,19 @@ export class EvidenceService {
     return item;
   }
 
-  async download(id: number, reason: string, actor: RequestUser): Promise<{ buffer: Buffer; item: EvidenceItem }> {
+  /**
+   * Decrypts to a temp file rather than a Buffer, for the same
+   * large-file-shouldn't-live-in-RAM reason as upload() — but unlike
+   * upload, this can't stream straight to the HTTP response: AES-GCM's
+   * auth tag is only checked once the *whole* ciphertext has been
+   * processed, inside decryptStreamToFile's pipeline. Streaming straight to
+   * the client would mean serving (possibly tampered) plaintext before
+   * that check has a chance to fail. Staging to a temp file first — and
+   * only handing the caller its path once decryption *and* the SHA-256
+   * re-check have both succeeded — keeps the existing fail-closed
+   * guarantee: no caller ever sees a byte of this file until it's verified.
+   */
+  async download(id: number, reason: string, actor: RequestUser): Promise<{ tempFilePath: string; item: EvidenceItem }> {
     if (!reason?.trim()) {
       throw new BadRequestException('A justification reason is required to download evidence');
     }
@@ -108,12 +148,19 @@ export class EvidenceService {
       throw new ForbiddenException('You do not have access to this evidence item — ask an IR Lead to grant access');
     }
 
-    const ciphertext = readWormBlob(item.storageRef);
-    const plaintext = decryptBuffer(ciphertext, item.encryptionIv, item.encryptionAuthTag);
-    if (sha256Hex(plaintext) !== item.sha256) {
-      throw new InternalServerErrorException(
-        'Integrity check failed: stored evidence hash does not match the original — possible tampering',
-      );
+    const tempFilePath = join(tmpdir(), `evidence-dl-${randomUUID()}.tmp`);
+    try {
+      const ciphertext = readWormBlobStream(item.storageRef);
+      const destination = createWriteStream(tempFilePath);
+      const { sha256 } = await decryptStreamToFile(ciphertext, item.encryptionIv, item.encryptionAuthTag, destination);
+      if (sha256 !== item.sha256) {
+        throw new InternalServerErrorException(
+          'Integrity check failed: stored evidence hash does not match the original — possible tampering',
+        );
+      }
+    } catch (err) {
+      await rm(tempFilePath, { force: true });
+      throw err;
     }
 
     const actorEntity = await this.users.findOneOrFail({ where: { id: actor.userId } });
@@ -121,7 +168,7 @@ export class EvidenceService {
       this.custody.create({ evidenceItem: item, actor: actorEntity, action: CustodyAction.DOWNLOADED, reason }),
     );
 
-    return { buffer: plaintext, item };
+    return { tempFilePath, item };
   }
 
   async custodyLog(id: number, actor: RequestUser): Promise<EvidenceCustodyEntry[]> {

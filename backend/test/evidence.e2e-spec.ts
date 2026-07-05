@@ -1,4 +1,6 @@
+import { createHash } from 'crypto';
 import * as fs from 'fs';
+import { tmpdir } from 'os';
 import * as path from 'path';
 import * as request from 'supertest';
 import { auth, createCase, createTestApp, enableMfaForActor, seedRoster, TestAppContext, TestRoster } from './utils/test-app';
@@ -75,6 +77,49 @@ describe('evidence', () => {
       .set(auth(roster.lead.token));
     expect(withReason.status).toBe(200);
     expect(withReason.text).toBe(content);
+  });
+
+  it('round-trips a multi-chunk file correctly and leaves no temp files behind (streamed intake, not buffered)', async () => {
+    // Upload/download now stream through a temp file rather than holding
+    // the whole thing in a Buffer (see EvidenceService.upload/download) —
+    // a few MB comfortably spans many stream chunks (Node's default
+    // highWaterMark is 64KB), which a tiny fixture wouldn't exercise.
+    const bigContent = Buffer.alloc(6 * 1024 * 1024);
+    for (let i = 0; i < bigContent.length; i++) {
+      bigContent[i] = i % 256;
+    }
+    const expectedSha256 = createHash('sha256').update(bigContent).digest('hex');
+
+    const uploadRes = await request(ctx.httpServer as never)
+      .post('/api/evidence')
+      .set(auth(roster.lead.token))
+      .field('caseId', String(caseId))
+      .field('type', 'log_export')
+      .attach('file', bigContent, 'big-file.bin');
+    expect(uploadRes.status).toBe(201);
+    expect(uploadRes.body.sha256).toBe(expectedSha256);
+    expect(uploadRes.body.sizeBytes).toBe(bigContent.length);
+
+    const downloadRes = await request(ctx.httpServer as never)
+      .get(`/api/evidence/${uploadRes.body.id}/download`)
+      .query({ reason: 'verifying multi-chunk round trip' })
+      .set(auth(roster.lead.token));
+    expect(downloadRes.status).toBe(200);
+    expect(Buffer.compare(downloadRes.body, bigContent)).toBe(0);
+
+    // Both the multer upload temp file and the download's decrypt-staging
+    // temp file live directly in the OS temp dir — confirm neither leaked.
+    // Cleanup is fire-and-forget from an HTTP response event handler (see
+    // EvidenceController.download), so it can trail the client's own
+    // response-received promise by a tick or two — poll briefly rather
+    // than asserting the instant supertest's await resolves.
+    const findLeftovers = () => fs.readdirSync(tmpdir()).filter((f) => f.startsWith('evidence-upload-') || f.startsWith('evidence-dl-'));
+    let leftovers = findLeftovers();
+    for (let attempt = 0; leftovers.length > 0 && attempt < 20; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      leftovers = findLeftovers();
+    }
+    expect(leftovers).toEqual([]);
   });
 
   it('fails closed (500), not open, when the stored blob has been tampered with', async () => {
