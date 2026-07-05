@@ -1,43 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import {
-  Case,
-  CaseHistoryEntry,
-  CaseImage,
-  CaseThreatIndicator,
-  ChatMessage,
-  EvidenceAccessGrant,
-  EvidenceCustodyEntry,
-  EvidenceItem,
-  PirActionItem,
-  PirReport,
-  RevokedToken,
-  Team,
-  ThreatIndicator,
-  ThreatShareRequest,
-  ThreatWatchlistMatch,
-  User,
-} from '../entities';
-
-const ENTITIES = [
-  Case,
-  CaseHistoryEntry,
-  CaseImage,
-  CaseThreatIndicator,
-  ChatMessage,
-  EvidenceAccessGrant,
-  EvidenceCustodyEntry,
-  EvidenceItem,
-  PirActionItem,
-  PirReport,
-  RevokedToken,
-  Team,
-  ThreatIndicator,
-  ThreatShareRequest,
-  ThreatWatchlistMatch,
-  User,
-];
+import { ENTITIES } from './entities';
 
 @Module({
   imports: [
@@ -48,9 +12,14 @@ const ENTITIES = [
         type: 'better-sqlite3',
         database: config.get<string>('DB_PATH', './data/incident-case-mgmt.sqlite'),
         entities: ENTITIES,
-        // Scaffold-only convenience: generates tables from entities automatically.
-        // Replace with proper migrations before this touches real incident data.
-        synchronize: true,
+        migrations: [__dirname + '/migrations/*{.ts,.js}'],
+        // Runs any pending migration on every boot (dev, test, and prod
+        // alike) — the same path is what /database/data-source.ts's CLI
+        // scripts use, so there's exactly one way schema changes happen,
+        // not "migrations in prod, synchronize everywhere else that could
+        // silently drift from what migrations actually produce."
+        migrationsRun: true,
+        synchronize: false,
       }),
     }),
   ],
