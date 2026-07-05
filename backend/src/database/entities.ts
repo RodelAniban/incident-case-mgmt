@@ -1,4 +1,5 @@
 import {
+  AdminAuditEntry,
   Case,
   CaseHistoryEntry,
   CaseImage,
@@ -21,6 +22,7 @@ import {
 // (the TypeORM CLI's connection for migration:generate/run) — one list, so
 // the two can never drift and produce a migration against the wrong schema.
 export const ENTITIES = [
+  AdminAuditEntry,
   Case,
   CaseHistoryEntry,
   CaseImage,

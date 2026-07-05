@@ -2,6 +2,7 @@ import { Route, Routes } from 'react-router-dom';
 import { AppShell } from './components/AppShell';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AccountSecurity } from './pages/AccountSecurity';
+import { AuditLog } from './pages/AuditLog';
 import { CaseDetail } from './pages/CaseDetail';
 import { Cases } from './pages/Cases';
 import { Dashboard } from './pages/Dashboard';
@@ -24,6 +25,7 @@ export function App() {
                 <Route path="/cases/:id" element={<CaseDetail />} />
                 <Route path="/threat-intel" element={<ThreatIntel />} />
                 <Route path="/admin/users" element={<UserAdministration />} />
+                <Route path="/audit-log" element={<AuditLog />} />
                 <Route path="/account/security" element={<AccountSecurity />} />
               </Routes>
             </AppShell>

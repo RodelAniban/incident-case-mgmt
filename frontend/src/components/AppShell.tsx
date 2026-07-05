@@ -1,6 +1,7 @@
 import AdminPanelSettingsOutlinedIcon from '@mui/icons-material/AdminPanelSettingsOutlined';
 import AssignmentOutlinedIcon from '@mui/icons-material/AssignmentOutlined';
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
+import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined';
 import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined';
@@ -45,6 +46,12 @@ const NAV_ITEMS = [
     path: '/admin/users',
     icon: <AdminPanelSettingsOutlinedIcon fontSize="small" />,
     permission: Permission.MANAGE_USERS,
+  },
+  {
+    label: 'Audit Log',
+    path: '/audit-log',
+    icon: <FactCheckOutlinedIcon fontSize="small" />,
+    permission: Permission.VIEW_AUDIT_LOG,
   },
 ] as const;
 

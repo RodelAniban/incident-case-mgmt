@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { Repository } from 'typeorm';
+import { AdminAuditService } from '../admin-audit/admin-audit.service';
 import { Role } from '../common/roles.enum';
 import { Team, User } from '../entities';
 
@@ -48,6 +49,7 @@ export class UsersService {
   constructor(
     @InjectRepository(User) private readonly users: Repository<User>,
     @InjectRepository(Team) private readonly teams: Repository<Team>,
+    private readonly adminAudit: AdminAuditService,
   ) {}
 
   findByEmail(email: string): Promise<User | null> {
@@ -101,14 +103,18 @@ export class UsersService {
   }
 
   /** Admin-initiated creation — the caller never picks a password; it's generated and returned once. */
-  async createUserByAdmin(params: {
-    email: string;
-    name: string;
-    role: Role;
-    teamId?: number | null;
-  }): Promise<{ user: User; temporaryPassword: string }> {
+  async createUserByAdmin(
+    params: { email: string; name: string; role: Role; teamId?: number | null },
+    actorId: number,
+  ): Promise<{ user: User; temporaryPassword: string }> {
     const temporaryPassword = generateTemporaryPassword();
     const user = await this.createUser({ ...params, password: temporaryPassword });
+    await this.adminAudit.record({
+      actor: { id: actorId },
+      targetUser: user,
+      action: 'user_created',
+      details: `email=${user.email}, role=${user.role}${user.team ? `, team=${user.team.name}` : ''}`,
+    });
     return { user, temporaryPassword };
   }
 
@@ -138,6 +144,10 @@ export class UsersService {
       }
     }
 
+    const oldRole = target.role;
+    const oldTeamLabel = target.team?.name ?? 'Unassigned';
+    const oldIsActive = target.isActive;
+
     if (changes.role !== undefined) {
       target.role = changes.role;
     }
@@ -161,10 +171,42 @@ export class UsersService {
       }
     }
 
-    return this.users.save(target);
+    const saved = await this.users.save(target);
+
+    // One audit entry per changed field, mirroring how case history records
+    // field-level changes rather than one entry per PATCH request.
+    if (changes.role !== undefined && changes.role !== oldRole) {
+      await this.adminAudit.record({
+        actor: { id: actorId },
+        targetUser: saved,
+        action: 'role_changed',
+        details: `${oldRole} -> ${changes.role}`,
+      });
+    }
+    if (changes.teamId !== undefined) {
+      const newTeamLabel = saved.team?.name ?? 'Unassigned';
+      if (newTeamLabel !== oldTeamLabel) {
+        await this.adminAudit.record({
+          actor: { id: actorId },
+          targetUser: saved,
+          action: 'team_changed',
+          details: `${oldTeamLabel} -> ${newTeamLabel}`,
+        });
+      }
+    }
+    if (changes.isActive !== undefined && changes.isActive !== oldIsActive) {
+      await this.adminAudit.record({
+        actor: { id: actorId },
+        targetUser: saved,
+        action: changes.isActive ? 'user_reactivated' : 'user_deactivated',
+        details: null,
+      });
+    }
+
+    return saved;
   }
 
-  async resetPassword(targetId: number): Promise<{ temporaryPassword: string }> {
+  async resetPassword(targetId: number, actorId: number): Promise<{ temporaryPassword: string }> {
     const target = await this.users.findOne({ where: { id: targetId } });
     if (!target) {
       throw new NotFoundException('User not found');
@@ -173,6 +215,12 @@ export class UsersService {
     target.passwordHash = await bcrypt.hash(temporaryPassword, 12);
     target.sessionVersion += 1;
     await this.users.save(target);
+    await this.adminAudit.record({
+      actor: { id: actorId },
+      targetUser: target,
+      action: 'password_reset',
+      details: null,
+    });
     return { temporaryPassword };
   }
 
@@ -180,7 +228,7 @@ export class UsersService {
     return this.teams.find({ order: { name: 'ASC' } });
   }
 
-  async createTeam(name: string): Promise<Team> {
+  async createTeam(name: string, actorId: number): Promise<Team> {
     const trimmed = name.trim();
     if (!trimmed) {
       throw new BadRequestException('Team name is required');
@@ -189,7 +237,14 @@ export class UsersService {
     if (existing) {
       throw new ConflictException('A team with this name already exists');
     }
-    return this.teams.save(this.teams.create({ name: trimmed }));
+    const team = await this.teams.save(this.teams.create({ name: trimmed }));
+    await this.adminAudit.record({
+      actor: { id: actorId },
+      targetUser: null,
+      action: 'team_created',
+      details: `name=${team.name}`,
+    });
+    return team;
   }
 
   async setPendingMfaSecret(userId: number, ciphertext: string, iv: string, authTag: string): Promise<void> {

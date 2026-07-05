@@ -13,9 +13,11 @@ input validation, TOTP-based MFA gating evidence access, real JWT
 revocation on logout), optional Google Sign-In (domain-gated
 auto-provisioning, server-verified ID tokens), full User & Role
 Administration (create/deactivate accounts, role/team changes, password
-resets, team management), and a 123-test backend e2e suite covering every
-security-critical property are all done; the pen test / DR drill /
-compliance review are inherently exercises against a real deployment rather
+resets, team management) with its own hash-chained admin action audit
+trail, real TypeORM migrations in place of `synchronize: true`, and a
+128-test backend e2e suite covering every security-critical property are
+all done; the pen test / DR drill / compliance review are inherently
+exercises against a real deployment rather
 than something to code.
 
 ## Stack
@@ -274,13 +276,45 @@ and `GET/POST /teams` — all `MANAGE_USERS` (Admin-only), per the matrix:
   `users.service.ts`) instead of a block-list, and turned into a permanent
   regression test (`security.e2e-spec.ts`) that checks the whole sensitive
   set, not just the one field that was already handled.
-- **Known limitation**: no persisted audit trail for admin actions
-  themselves (role changes, deactivations, password resets) — only
-  case-scoped actions get the hash-chained ledger described above. These
-  actions are logged via the server's own process logs, not a queryable,
-  tamper-evident record. Building that would mean a second, parallel audit
-  system (case history is intentionally case-scoped), which felt like a
-  separate feature rather than part of "admin CRUD."
+- **Admin actions now have their own hash-chained audit trail** — see
+  below — closing what was originally a known limitation here.
+
+## Admin Action Audit Trail
+
+Case history (`CaseHistoryEntry`) is intentionally scoped to one case's
+hash chain — it has no natural home for "an admin reset someone's
+password" or "a new team was created," which affect no particular case at
+all. `AdminAuditEntry` (`backend/src/admin-audit/`) is a second,
+parallel ledger with the identical tamper-evident shape, chained globally
+instead of per-case:
+
+- **Same hash-chain mechanics as case history, deliberately** —
+  `hash = sha256(prevHash + entry payload)`, so altering or deleting a
+  historical row breaks the chain for everything after it.
+  `GET /admin-audit/verify` walks the whole chain and reports exactly
+  which entry (if any) doesn't line up, mirroring
+  `GET /audit/cases/:id/verify`'s response shape.
+- **Visible to the same audience as case audit history — Lead, CISO,
+  Auditor, Admin — not just Admin.** It's gated by `VIEW_AUDIT_LOG`, the
+  same permission as the per-case trail, not `MANAGE_USERS`. An Auditor
+  has every reason to see what an Admin changed and zero reason to be
+  able to change it themselves — folding this into the `MANAGE_USERS`-only
+  admin page would have made it invisible to the one role whose entire
+  job is oversight.
+- **One entry per changed field**, matching case history's pattern rather
+  than one entry per API call: patching role *and* team in a single
+  request produces two audit entries, each independently verifiable and
+  each recording only what actually changed. A no-op field (e.g.
+  re-sending someone's current team) records nothing — an audit trail that
+  logs non-events is one an admin learns to skim past, which defeats the
+  point of having it.
+- **Covers**: account creation, role changes, team (re)assignment,
+  deactivation/reactivation, password resets, and team creation. Every
+  entry records the actor; all but team creation also record the affected
+  user.
+- Surfaced in the UI under the new **Audit Log** nav item (own page, not
+  folded into User & Role Administration — same reasoning as the
+  permission gate above).
 
 ## Security Hardening (Phase 6, in progress)
 
@@ -387,7 +421,7 @@ cd backend
 npm run test:e2e
 ```
 
-123 tests across 14 spec files (`backend/test/*.e2e-spec.ts`), all boot a real
+128 tests across 15 spec files (`backend/test/*.e2e-spec.ts`), all boot a real
 Nest app (`test/utils/test-app.ts`) — real guards, real TypeORM, real
 AES-256-GCM crypto — against an isolated in-memory SQLite DB and a per-test
 temp directory for evidence/case-image blobs, rather than mocking anything
@@ -445,6 +479,13 @@ security-relevant:
   deactivating a user kills a session they're already using (not just
   future logins) and that a password reset does the same via the
   `sessionVersion` counter.
+- **`admin-audit.e2e-spec.ts`** confirms the audience is Lead/CISO/Auditor/
+  Admin (not just Admin, unlike every other endpoint in this ledger's
+  neighborhood), that every action type produces the right actor/target/
+  label, that a no-op field change produces no entry at all, that
+  `/admin-audit/verify` reports a genuinely valid chain, and — reusing the
+  lesson from the `GET /users` leak above — that the nested actor/target
+  user objects never carry `passwordHash` or the MFA-secret columns.
 - Rate limiting is disabled for the suite via an env flag read at
   `AppModule` decoration time (`DISABLE_THROTTLING`, set in
   `test/env-setup.ts`) — seeding six fixture users per spec file would

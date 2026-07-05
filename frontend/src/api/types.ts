@@ -187,6 +187,35 @@ export interface CaseHistoryEntry {
   ts: string;
 }
 
+export enum AdminAuditAction {
+  USER_CREATED = 'user_created',
+  ROLE_CHANGED = 'role_changed',
+  TEAM_CHANGED = 'team_changed',
+  USER_DEACTIVATED = 'user_deactivated',
+  USER_REACTIVATED = 'user_reactivated',
+  PASSWORD_RESET = 'password_reset',
+  TEAM_CREATED = 'team_created',
+}
+
+export const ADMIN_AUDIT_ACTION_LABELS: Record<AdminAuditAction, string> = {
+  [AdminAuditAction.USER_CREATED]: 'created account',
+  [AdminAuditAction.ROLE_CHANGED]: 'changed role',
+  [AdminAuditAction.TEAM_CHANGED]: 'changed team',
+  [AdminAuditAction.USER_DEACTIVATED]: 'disabled account',
+  [AdminAuditAction.USER_REACTIVATED]: 're-enabled account',
+  [AdminAuditAction.PASSWORD_RESET]: 'reset password',
+  [AdminAuditAction.TEAM_CREATED]: 'created team',
+};
+
+export interface AdminAuditEntry {
+  id: number;
+  actor: UserSummary;
+  targetUser: UserSummary | null;
+  action: AdminAuditAction;
+  details: string | null;
+  ts: string;
+}
+
 export interface DashboardSummary {
   openCaseCount: number;
   slaAtRiskCount: number;

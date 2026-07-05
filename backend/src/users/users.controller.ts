@@ -21,8 +21,8 @@ export class UsersController {
   }
 
   @Post()
-  async create(@Body() dto: CreateUserDto) {
-    const { user, temporaryPassword } = await this.usersService.createUserByAdmin(dto);
+  async create(@Body() dto: CreateUserDto, @Req() req: { user: RequestUser }) {
+    const { user, temporaryPassword } = await this.usersService.createUserByAdmin(dto, req.user.userId);
     return { user: toSafeUser(user), temporaryPassword };
   }
 
@@ -37,7 +37,7 @@ export class UsersController {
   }
 
   @Post(':id/reset-password')
-  resetPassword(@Param('id', ParseIntPipe) id: number) {
-    return this.usersService.resetPassword(id);
+  resetPassword(@Param('id', ParseIntPipe) id: number, @Req() req: { user: RequestUser }) {
+    return this.usersService.resetPassword(id, req.user.userId);
   }
 }
