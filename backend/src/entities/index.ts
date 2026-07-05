@@ -3,6 +3,8 @@ export * from './user.entity';
 export * from './case.entity';
 export * from './case-history.entity';
 export * from './evidence-item.entity';
+export * from './evidence-custody-entry.entity';
+export * from './evidence-access-grant.entity';
 export * from './chat-message.entity';
 export * from './pir-report.entity';
 export * from './threat-indicator.entity';

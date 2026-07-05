@@ -1,13 +1,5 @@
 import { ComingSoon } from '../components/ComingSoon';
 
-export const EvidencePlaceholder = () => (
-  <ComingSoon
-    title="Evidence Management"
-    phase={2}
-    description="Forensically sound intake, SHA-256 hashing, and an append-only chain-of-custody ledger for every artifact attached to a case."
-  />
-);
-
 export const ChatPlaceholder = () => (
   <ComingSoon
     title="Secure Analyst Chat & Notes"

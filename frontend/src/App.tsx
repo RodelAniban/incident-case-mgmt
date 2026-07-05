@@ -8,7 +8,6 @@ import { Login } from './pages/Login';
 import {
   AdminUsersPlaceholder,
   ChatPlaceholder,
-  EvidencePlaceholder,
   PirPlaceholder,
   ThreatIntelPlaceholder,
 } from './pages/PlaceholderPages';
@@ -26,7 +25,6 @@ export function App() {
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/cases" element={<Cases />} />
                 <Route path="/cases/:id" element={<CaseDetail />} />
-                <Route path="/evidence" element={<EvidencePlaceholder />} />
                 <Route path="/chat" element={<ChatPlaceholder />} />
                 <Route path="/pir" element={<PirPlaceholder />} />
                 <Route path="/threat-intel" element={<ThreatIntelPlaceholder />} />

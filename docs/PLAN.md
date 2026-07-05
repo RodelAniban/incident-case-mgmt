@@ -11,7 +11,7 @@ Edge          API Gateway  ·  Auth (JWT today, SSO/SAML later)
                  |
 Services      Case & Ticketing · Evidence · Chat & Notes · PIR · TI Enrichment · Notifications
                  |
-Data          SQLite (WAL) · Object storage (WORM, Phase 2) · Search index (later) · Redis (later)
+Data          SQLite (WAL) · Local WORM filesystem storage (Phase 2 — see note below) · Search index (later) · Redis (later)
                  |  controlled egress proxy
 External      Org SSO/LDAP · SIEM · TI feeds (MISP/TAXII)
 ```
@@ -46,9 +46,16 @@ only — it decides what to render, not what to allow.
 
 ## Roadmap
 
-1. **Foundation** (this scaffold) — auth/RBAC, case model, audit log, dashboard
-2. **Evidence Management** — intake, hashing, chain-of-custody, WORM storage
+1. **Foundation** (done) — auth/RBAC, case model, audit log, dashboard
+2. **Evidence Management** (done) — AES-256-GCM intake, SHA-256 verified download,
+   OS-enforced WORM lock (`chmod 0444`), per-item access grants, custody ledger
 3. **Secure Chat & Notes** — case-scoped encrypted collaboration
 4. **PIR Templates** — root-cause template library, action-item tracking
 5. **Threat Intel Integration** — STIX/TAXII ingestion, watchlist matching
 6. **Hardening & go-live** — pen test, DR drill, compliance review
+
+Note: the plan's original storage recommendation was MinIO (S3-compatible,
+Object Lock). The scaffold uses local filesystem storage with an app-level
+WORM lock instead, to avoid standing up an extra service for a single-org
+dev scaffold — swap `backend/src/evidence/evidence-storage.util.ts` for an
+S3/MinIO-backed implementation before scaling beyond one host.

@@ -5,6 +5,8 @@ import {
   Case,
   CaseHistoryEntry,
   ChatMessage,
+  EvidenceAccessGrant,
+  EvidenceCustodyEntry,
   EvidenceItem,
   PirReport,
   Team,
@@ -12,7 +14,18 @@ import {
   User,
 } from '../entities';
 
-const ENTITIES = [Case, CaseHistoryEntry, ChatMessage, EvidenceItem, PirReport, Team, ThreatIndicator, User];
+const ENTITIES = [
+  Case,
+  CaseHistoryEntry,
+  ChatMessage,
+  EvidenceAccessGrant,
+  EvidenceCustodyEntry,
+  EvidenceItem,
+  PirReport,
+  Team,
+  ThreatIndicator,
+  User,
+];
 
 @Module({
   imports: [

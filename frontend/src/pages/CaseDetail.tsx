@@ -21,6 +21,7 @@ import {
   Permission,
   STATUS_LABELS,
 } from '../api/types';
+import { EvidencePanel } from '../components/EvidencePanel';
 import { SeverityChip } from '../components/SeverityChip';
 
 export function CaseDetail() {
@@ -60,7 +61,7 @@ export function CaseDetail() {
   }
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, maxWidth: 760 }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, maxWidth: 900 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         <IconButton size="small" onClick={() => navigate('/cases')}>
           <ArrowBackIcon fontSize="small" />
@@ -105,6 +106,8 @@ export function CaseDetail() {
           ))}
         </TextField>
       </Paper>
+
+      <EvidencePanel caseId={caseData.id} />
 
       {can(Permission.VIEW_AUDIT_LOG) && (
         <Paper variant="outlined">

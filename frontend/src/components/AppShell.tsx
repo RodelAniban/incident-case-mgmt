@@ -3,7 +3,6 @@ import AssignmentOutlinedIcon from '@mui/icons-material/AssignmentOutlined';
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
 import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
 import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
-import InventoryOutlinedIcon from '@mui/icons-material/InventoryOutlined';
 import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined';
 import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined';
 import {
@@ -35,12 +34,6 @@ const NAV_ITEMS = [
     path: '/cases',
     icon: <AssignmentOutlinedIcon fontSize="small" />,
     permission: Permission.VIEW_ASSIGNED_CASES,
-  },
-  {
-    label: 'Evidence',
-    path: '/evidence',
-    icon: <InventoryOutlinedIcon fontSize="small" />,
-    permission: Permission.VIEW_EVIDENCE_METADATA,
   },
   {
     label: 'Chat & Notes',

@@ -1,10 +1,12 @@
 # Incident Case Management System
 
-Self-hosted incident case management for a SOC/IR team. This is the Phase 1
-("Foundation") slice of the [architecture plan](./docs/PLAN.md): auth & RBAC,
-the core case/ticket model, an immutable audit log, and a starter dashboard.
-Evidence, chat, PIR, and threat-intel modules exist as reserved schema +
-placeholder routes, ready to be filled in per the roadmap.
+Self-hosted incident case management for a SOC/IR team, built per the
+[architecture plan](./docs/PLAN.md). Phase 1 (Foundation) and Phase 2
+(Evidence Management) are implemented: auth & RBAC, the core case/ticket
+model, an immutable audit log, a starter dashboard, and encrypted,
+chain-of-custody-tracked evidence intake. Chat, PIR, and threat-intel
+modules exist as reserved schema + placeholder routes, ready to be filled
+in per the roadmap.
 
 ## Stack
 
@@ -56,10 +58,29 @@ see role-scoped navigation and data.
 | Incident Ticketing | Implemented — create/list/update, field-level audit trail |
 | Access control (RBAC) | Implemented — role → permission matrix enforced on every route |
 | Audit log | Implemented — hash-chained, tamper-evident history per case |
-| Evidence Management | Schema + stub route only (Phase 2) |
+| Evidence Management | Implemented — AES-256-GCM encrypted, WORM-locked intake; hash-verified download; append-only custody ledger; per-item access grants |
 | Secure Analyst Chat & Notes | Schema + stub route only (Phase 3) |
 | PIR Templates | Schema + stub route only (Phase 4) |
 | Threat Intelligence Integration | Schema + stub route only (Phase 5) |
+
+## Evidence Management
+
+Evidence lives inside a case (Case detail page → Evidence panel), not as a
+standalone section:
+
+- **Intake**: upload computes a SHA-256 of the plaintext, encrypts it with
+  AES-256-GCM (key from `EVIDENCE_ENCRYPTION_KEY`), writes the ciphertext to
+  `EVIDENCE_STORAGE_DIR`, then `chmod`s it `0444` — a real, OS-enforced
+  write-once original, not just an app-level promise.
+- **Download**: requires a logged reason. The blob is decrypted, GCM's
+  built-in auth tag is checked (catches tampering before anything else runs),
+  then the SHA-256 is re-verified against the original. Any mismatch fails
+  closed with a 500, never silently serves altered content.
+- **Per-item access**: being on the case team isn't enough. Analyst L2 can
+  only download evidence they collected themselves, or an item an IR Lead /
+  CISO / Admin has explicitly granted them. Leadership roles retain
+  unconditional oversight access. Every grant, revoke, and download is
+  recorded in the custody ledger (`EvidenceCustodyEntry`).
 
 ## Notes for going further
 
@@ -69,3 +90,10 @@ see role-scoped navigation and data.
 - The RBAC matrix lives in `backend/src/common/permissions.ts` and is mirrored
   (read-only, UI-gating purposes) in `frontend/src/api/types.ts`. The API is
   always the enforcement point.
+- Evidence upload buffers the whole file in memory (`multer.memoryStorage()`)
+  — fine for the scaffold, but real disk images / memory dumps need chunked
+  or streamed intake instead.
+- `@nestjs/platform-express@10.x` bundles its own `multer@2.0.2`, which has an
+  open DoS advisory (deeply-nested multipart field names) only fixed by a
+  NestJS v11 major upgrade. Low risk for an internal, non-public-facing SOC
+  tool, but worth revisiting before any internet-facing deployment.

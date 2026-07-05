@@ -186,3 +186,67 @@ export interface DashboardSummary {
   bySeverity: Record<CaseSeverity, number>;
   recentCases: Case[];
 }
+
+export enum EvidenceType {
+  DISK_IMAGE = 'disk_image',
+  MEMORY_DUMP = 'memory_dump',
+  LOG_EXPORT = 'log_export',
+  EMAIL = 'email',
+  PCAP = 'pcap',
+  SCREENSHOT = 'screenshot',
+  OTHER = 'other',
+}
+
+export const EVIDENCE_TYPE_LABELS: Record<EvidenceType, string> = {
+  [EvidenceType.DISK_IMAGE]: 'Disk image',
+  [EvidenceType.MEMORY_DUMP]: 'Memory dump',
+  [EvidenceType.LOG_EXPORT]: 'Log export',
+  [EvidenceType.EMAIL]: 'Email',
+  [EvidenceType.PCAP]: 'Packet capture',
+  [EvidenceType.SCREENSHOT]: 'Screenshot',
+  [EvidenceType.OTHER]: 'Other',
+};
+
+export interface EvidenceItem {
+  id: number;
+  type: EvidenceType;
+  source: string | null;
+  originalFilename: string;
+  mimeType: string | null;
+  sizeBytes: number;
+  sha256: string;
+  tags: string | null;
+  notes: string | null;
+  collectedBy: UserSummary;
+  collectedAt: string;
+}
+
+export enum CustodyAction {
+  UPLOADED = 'uploaded',
+  DOWNLOADED = 'downloaded',
+  ACCESS_GRANTED = 'access_granted',
+  ACCESS_REVOKED = 'access_revoked',
+}
+
+export const CUSTODY_ACTION_LABELS: Record<CustodyAction, string> = {
+  [CustodyAction.UPLOADED]: 'uploaded',
+  [CustodyAction.DOWNLOADED]: 'downloaded',
+  [CustodyAction.ACCESS_GRANTED]: 'granted access',
+  [CustodyAction.ACCESS_REVOKED]: 'revoked access',
+};
+
+export interface EvidenceCustodyEntry {
+  id: number;
+  action: CustodyAction;
+  reason: string | null;
+  actor: UserSummary;
+  ts: string;
+}
+
+export interface EvidenceAccessGrant {
+  id: number;
+  user: UserSummary;
+  grantedBy: UserSummary;
+  reason: string | null;
+  grantedAt: string;
+}
