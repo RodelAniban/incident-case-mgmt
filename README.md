@@ -1,12 +1,12 @@
 # Incident Case Management System
 
 Self-hosted incident case management for a SOC/IR team, built per the
-[architecture plan](./docs/PLAN.md). Phases 1–3 are implemented: auth & RBAC,
+[architecture plan](./docs/PLAN.md). Phases 1–4 are implemented: auth & RBAC,
 the core case/ticket model, an immutable audit log, a starter dashboard,
 encrypted chain-of-custody-tracked evidence, a rich-text case narrative with
-inline images, and real-time per-case chat & notes. PIR and threat-intel
-modules exist as reserved schema + placeholder routes, ready to be filled in
-per the roadmap.
+inline images, real-time per-case chat & notes, and versioned post-incident
+review reports. Threat-intel integration exists as reserved schema + a
+placeholder route, ready to be filled in per the roadmap.
 
 ## Stack
 
@@ -61,7 +61,7 @@ see role-scoped navigation and data.
 | Evidence Management | Implemented — AES-256-GCM encrypted, WORM-locked intake; hash-verified download; append-only custody ledger; per-item access grants |
 | Case Narrative | Implemented — Word-style rich text, sanitized server-side, with encrypted inline images/screenshots |
 | Secure Analyst Chat & Notes | Implemented — real-time per-case chat over WebSocket, markdown (no links/images), audited export |
-| PIR Templates | Schema + stub route only (Phase 4) |
+| PIR Templates | Implemented — versioned reports (immutable once finalized), auto-seeded timeline, remediation action-item tracker |
 | Threat Intelligence Integration | Schema + stub route only (Phase 5) |
 
 ## Evidence Management
@@ -139,11 +139,53 @@ NestJS WebSocket gateway (`backend/src/chat/chat.gateway.ts`):
   for message retention tied to case retention with a legal-hold override) —
   messages persist indefinitely today.
 
+## PIR Templates
+
+Post-incident review lives inside the case detail page too (Case detail →
+Post-Incident Review):
+
+- **Five fixed sections** (timeline reconstruction, root cause, detection gap
+  analysis, response effectiveness, lessons learned), each edited with the
+  same Tiptap/`NarrativeEditor` component the case narrative uses — including
+  inline images — rather than a separate rich-text stack.
+- **Auto-seeded timeline**: starting a PIR merges the case's audit history and
+  evidence collection timestamps into an initial timeline list, so the
+  analyst edits a real starting point instead of a blank page. It's a
+  one-time seed at creation, not continuously re-synced — later case activity
+  won't silently rewrite something the analyst has already edited.
+- **Templates by category** (`backend/src/pir/pir-templates.ts`): Phishing,
+  Ransomware, Insider Threat, Data Breach, Generic — the five sections don't
+  change shape, only the template's framing text does.
+- **Two distinct permissions, again on purpose**: `CREATE_EDIT_CASE`
+  (L1/L2/Lead/Admin) drafts and edits sections; `FINALIZE_PIR` (Lead/CISO)
+  approves. CISO can finalize a report it can't edit a word of — an approval
+  role, not an authoring one, consistent with the rest of the matrix.
+- **Immutable once finalized, versioned rather than mutated**: `PirReport` is
+  `ManyToOne` on `Case`, not `OneToOne` — a case can have several report rows
+  over time, one per version. Finalizing freezes that row's sections forever;
+  further changes go through `POST /pir/cases/:id/versions` (also
+  `FINALIZE_PIR`-gated), which copies the finalized content forward into a
+  new draft row rather than editing history. Finalizing writes an audit-trail
+  entry (`field: 'pir_finalized'`).
+- **Action items stay live after finalization** — remediation tracking
+  (owner, due date, done/not-done) is deliberately exempt from the
+  immutability rule; only the narrative sections freeze. `owner` is a
+  free-text label, not a user lookup, since remediation is often assigned to
+  a team or a vendor, not an individual account.
+- **Known limitation**: no reminder/notification engine (the plan calls for
+  "follow-up reminders") and no formal PIR distribution-list/classification
+  restriction beyond normal case-team RBAC scoping.
+
 ## Notes for going further
 
 - `synchronize: true` in `backend/src/database/database.module.ts` is a
   scaffold convenience — swap for TypeORM migrations before this holds real
-  incident data.
+  incident data. It's also not fully reliable across relation-shape changes:
+  changing `PirReport.case` from `OneToOne` to `ManyToOne` mid-development
+  left a stale `UNIQUE` constraint on `caseId` in SQLite that `synchronize`
+  didn't drop, and every insert past the first failed until the dev DB file
+  was deleted and reseeded. Expect to do the same after any relation-shape
+  change until this moves to real migrations.
 - The RBAC matrix lives in `backend/src/common/permissions.ts` and is mirrored
   (read-only, UI-gating purposes) in `frontend/src/api/types.ts`. The API is
   always the enforcement point.

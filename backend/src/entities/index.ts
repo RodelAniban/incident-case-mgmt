@@ -8,4 +8,5 @@ export * from './evidence-custody-entry.entity';
 export * from './evidence-access-grant.entity';
 export * from './chat-message.entity';
 export * from './pir-report.entity';
+export * from './pir-action-item.entity';
 export * from './threat-indicator.entity';

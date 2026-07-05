@@ -1,7 +1,6 @@
 import AdminPanelSettingsOutlinedIcon from '@mui/icons-material/AdminPanelSettingsOutlined';
 import AssignmentOutlinedIcon from '@mui/icons-material/AssignmentOutlined';
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
-import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
 import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined';
 import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined';
 import {
@@ -33,12 +32,6 @@ const NAV_ITEMS = [
     path: '/cases',
     icon: <AssignmentOutlinedIcon fontSize="small" />,
     permission: Permission.VIEW_ASSIGNED_CASES,
-  },
-  {
-    label: 'PIR',
-    path: '/pir',
-    icon: <FactCheckOutlinedIcon fontSize="small" />,
-    permission: null,
   },
   {
     label: 'Threat Intel',

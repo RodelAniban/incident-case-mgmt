@@ -1,13 +1,5 @@
 import { ComingSoon } from '../components/ComingSoon';
 
-export const PirPlaceholder = () => (
-  <ComingSoon
-    title="Post-Incident Review Templates"
-    phase={4}
-    description="Standardized root-cause analysis, auto-populated timelines, and tracked remediation action items."
-  />
-);
-
 export const ThreatIntelPlaceholder = () => (
   <ComingSoon
     title="Threat Intelligence Integration"

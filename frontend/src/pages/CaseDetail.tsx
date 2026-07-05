@@ -25,6 +25,7 @@ import {
 import { ChatPanel } from '../components/ChatPanel';
 import { EvidencePanel } from '../components/EvidencePanel';
 import { NarrativeEditor, NarrativeViewer } from '../components/NarrativeEditor';
+import { PirPanel } from '../components/PirPanel';
 import { SeverityChip } from '../components/SeverityChip';
 
 export function CaseDetail() {
@@ -189,6 +190,8 @@ export function CaseDetail() {
       <EvidencePanel caseId={caseData.id} />
 
       <ChatPanel caseId={caseData.id} />
+
+      <PirPanel caseId={caseData.id} />
 
       {can(Permission.VIEW_AUDIT_LOG) && (
         <Paper variant="outlined">

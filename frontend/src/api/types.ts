@@ -272,3 +272,50 @@ export interface ChatMessage {
   author: UserSummary;
   ts: string;
 }
+
+// Mirrors backend/src/pir/pir-templates.ts — the 5 sections are fixed; only the
+// template's framing text changes.
+export interface PirTemplate {
+  id: string;
+  name: string;
+  focus: string;
+}
+
+export const PIR_SECTION_KEYS = [
+  'timelineNotes',
+  'rootCause',
+  'detectionGapAnalysis',
+  'responseEffectiveness',
+  'lessonsLearned',
+] as const;
+
+export type PirSectionKey = (typeof PIR_SECTION_KEYS)[number];
+export type PirSections = Record<PirSectionKey, string>;
+
+export const PIR_SECTION_LABELS: Record<PirSectionKey, string> = {
+  timelineNotes: 'Timeline reconstruction',
+  rootCause: 'Root cause',
+  detectionGapAnalysis: 'Detection gap analysis',
+  responseEffectiveness: 'Response effectiveness',
+  lessonsLearned: 'Lessons learned',
+};
+
+export interface PirReport {
+  id: number;
+  templateId: string;
+  sections: PirSections;
+  version: number;
+  createdBy: UserSummary;
+  finalizedAt: string | null;
+  finalizedBy: UserSummary | null;
+  createdAt: string;
+}
+
+export interface PirActionItem {
+  id: number;
+  description: string;
+  owner: string | null;
+  dueDate: string | null;
+  done: boolean;
+  createdAt: string;
+}

@@ -5,7 +5,7 @@ import { CaseDetail } from './pages/CaseDetail';
 import { Cases } from './pages/Cases';
 import { Dashboard } from './pages/Dashboard';
 import { Login } from './pages/Login';
-import { AdminUsersPlaceholder, PirPlaceholder, ThreatIntelPlaceholder } from './pages/PlaceholderPages';
+import { AdminUsersPlaceholder, ThreatIntelPlaceholder } from './pages/PlaceholderPages';
 
 export function App() {
   return (
@@ -20,7 +20,6 @@ export function App() {
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/cases" element={<Cases />} />
                 <Route path="/cases/:id" element={<CaseDetail />} />
-                <Route path="/pir" element={<PirPlaceholder />} />
                 <Route path="/threat-intel" element={<ThreatIntelPlaceholder />} />
                 <Route path="/admin/users" element={<AdminUsersPlaceholder />} />
               </Routes>
