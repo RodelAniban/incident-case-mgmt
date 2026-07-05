@@ -10,3 +10,6 @@ export * from './chat-message.entity';
 export * from './pir-report.entity';
 export * from './pir-action-item.entity';
 export * from './threat-indicator.entity';
+export * from './case-threat-indicator.entity';
+export * from './threat-watchlist-match.entity';
+export * from './threat-share-request.entity';

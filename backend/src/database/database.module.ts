@@ -5,6 +5,7 @@ import {
   Case,
   CaseHistoryEntry,
   CaseImage,
+  CaseThreatIndicator,
   ChatMessage,
   EvidenceAccessGrant,
   EvidenceCustodyEntry,
@@ -13,6 +14,8 @@ import {
   PirReport,
   Team,
   ThreatIndicator,
+  ThreatShareRequest,
+  ThreatWatchlistMatch,
   User,
 } from '../entities';
 
@@ -20,6 +23,7 @@ const ENTITIES = [
   Case,
   CaseHistoryEntry,
   CaseImage,
+  CaseThreatIndicator,
   ChatMessage,
   EvidenceAccessGrant,
   EvidenceCustodyEntry,
@@ -28,6 +32,8 @@ const ENTITIES = [
   PirReport,
   Team,
   ThreatIndicator,
+  ThreatShareRequest,
+  ThreatWatchlistMatch,
   User,
 ];
 

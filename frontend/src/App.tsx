@@ -5,7 +5,8 @@ import { CaseDetail } from './pages/CaseDetail';
 import { Cases } from './pages/Cases';
 import { Dashboard } from './pages/Dashboard';
 import { Login } from './pages/Login';
-import { AdminUsersPlaceholder, ThreatIntelPlaceholder } from './pages/PlaceholderPages';
+import { AdminUsersPlaceholder } from './pages/PlaceholderPages';
+import { ThreatIntel } from './pages/ThreatIntel';
 
 export function App() {
   return (
@@ -20,7 +21,7 @@ export function App() {
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/cases" element={<Cases />} />
                 <Route path="/cases/:id" element={<CaseDetail />} />
-                <Route path="/threat-intel" element={<ThreatIntelPlaceholder />} />
+                <Route path="/threat-intel" element={<ThreatIntel />} />
                 <Route path="/admin/users" element={<AdminUsersPlaceholder />} />
               </Routes>
             </AppShell>

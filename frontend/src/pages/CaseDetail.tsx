@@ -27,6 +27,7 @@ import { EvidencePanel } from '../components/EvidencePanel';
 import { NarrativeEditor, NarrativeViewer } from '../components/NarrativeEditor';
 import { PirPanel } from '../components/PirPanel';
 import { SeverityChip } from '../components/SeverityChip';
+import { ThreatIntelPanel } from '../components/ThreatIntelPanel';
 
 export function CaseDetail() {
   const { id } = useParams();
@@ -192,6 +193,8 @@ export function CaseDetail() {
       <ChatPanel caseId={caseData.id} />
 
       <PirPanel caseId={caseData.id} />
+
+      <ThreatIntelPanel caseId={caseData.id} caseStatus={caseData.status} />
 
       {can(Permission.VIEW_AUDIT_LOG) && (
         <Paper variant="outlined">

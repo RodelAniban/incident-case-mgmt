@@ -21,8 +21,9 @@ External      Org SSO/LDAP · SIEM · TI feeds (MISP/TAXII)
 `Team`, `User` (role, team), `Case` (severity/category/status/assignee/SLA),
 `CaseHistoryEntry` (hash-chained audit trail), `EvidenceItem` +
 `EvidenceCustodyEntry` + `EvidenceAccessGrant`, `CaseImage`, `ChatMessage`,
-`PirReport` (versioned, `ManyToOne` on `Case`) + `PirActionItem`, and reserved
-schema for `ThreatIndicator`.
+`PirReport` (versioned, `ManyToOne` on `Case`) + `PirActionItem`,
+`ThreatIndicator` (upserted by type+value) + `CaseThreatIndicator` +
+`ThreatWatchlistMatch` + `ThreatShareRequest`.
 
 ## Access control matrix
 
@@ -57,7 +58,9 @@ only — it decides what to render, not what to allow.
 4. **PIR Templates** (done) — 5 fixed sections shared with the narrative editor,
    auto-seeded timeline from case history + evidence, immutable-once-finalized
    versioning, remediation action-item tracker
-5. **Threat Intel Integration** — STIX/TAXII ingestion, watchlist matching
+5. **Threat Intel Integration** (done) — normalized feed import (upsert by
+   type+value), per-case IOC linking with computed attribution, watchlist
+   matching on re-import, TLP-gated outbound-sharing approval (CISO-only)
 6. **Hardening & go-live** — pen test, DR drill, compliance review
 
 Note: the plan's original storage recommendation was MinIO (S3-compatible,

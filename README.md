@@ -1,12 +1,15 @@
 # Incident Case Management System
 
 Self-hosted incident case management for a SOC/IR team, built per the
-[architecture plan](./docs/PLAN.md). Phases 1–4 are implemented: auth & RBAC,
-the core case/ticket model, an immutable audit log, a starter dashboard,
-encrypted chain-of-custody-tracked evidence, a rich-text case narrative with
-inline images, real-time per-case chat & notes, and versioned post-incident
-review reports. Threat-intel integration exists as reserved schema + a
-placeholder route, ready to be filled in per the roadmap.
+[architecture plan](./docs/PLAN.md). All five roadmap phases are implemented:
+auth & RBAC, the core case/ticket model, an immutable audit log, a starter
+dashboard, encrypted chain-of-custody-tracked evidence, a rich-text case
+narrative with inline images, real-time per-case chat & notes, versioned
+post-incident review reports, and threat-intelligence integration (feed
+import, per-case IOC linking, watchlist matching, TLP-gated outbound-sharing
+approval). Phase 6 (hardening & go-live — pen test, DR drill, compliance
+review) is the one item left on the original roadmap, and is inherently an
+exercise done against a real deployment rather than something to code.
 
 ## Stack
 
@@ -62,7 +65,7 @@ see role-scoped navigation and data.
 | Case Narrative | Implemented — Word-style rich text, sanitized server-side, with encrypted inline images/screenshots |
 | Secure Analyst Chat & Notes | Implemented — real-time per-case chat over WebSocket, markdown (no links/images), audited export |
 | PIR Templates | Implemented — versioned reports (immutable once finalized), auto-seeded timeline, remediation action-item tracker |
-| Threat Intelligence Integration | Schema + stub route only (Phase 5) |
+| Threat Intelligence Integration | Implemented — feed import, per-case IOC linking + attribution, watchlist matching, TLP-gated outbound-sharing approval |
 
 ## Evidence Management
 
@@ -176,6 +179,45 @@ Post-Incident Review):
   "follow-up reminders") and no formal PIR distribution-list/classification
   restriction beyond normal case-team RBAC scoping.
 
+## Threat Intelligence Integration
+
+Unlike Evidence/Narrative/Chat/PIR, this one isn't purely case-scoped — it has
+a real global surface (`/threat-intel`) alongside a per-case panel, because
+the underlying data (the IOC store, the CISO's approval queue) is
+inherently cross-case:
+
+- **Feed import is a normalized upsert, not raw storage**: `POST
+  /threat-intel/import` accepts a simplified STIX-like indicator array
+  (a real integration would translate an actual STIX 2.1 bundle into this
+  shape) and upserts by `(type, value)` — a re-import refreshes confidence,
+  TLP, and attribution on the *same* row rather than duplicating it. Restricted
+  to Admin — feed configuration is a platform task, not tied to a matrix
+  permission, the same "direct role check" pattern already used for evidence
+  access-grant management.
+- **Watchlist matching, for real**: importing an indicator that's already
+  linked to a case creates a `ThreatWatchlistMatch`, surfaced as a banner on
+  that case until acknowledged. It's not a toy — I verified it end-to-end
+  through the actual UI: link an IOC to a case, re-import fresh intel on that
+  same IOC, watch the "New intel on X — already linked to this case" banner
+  appear without any manual refresh logic.
+- **Attribution linking**: a case's associated threat actors/campaigns are
+  computed from its linked indicators' `threatActor`/`campaign` fields, not
+  stored redundantly on the case itself.
+- **TLP enforced on the way out, not just the way in**: `requestShare()`
+  refuses to even create a pending request unless the case is `CLOSED` and
+  the indicator is `TLP:CLEAR` or `TLP:GREEN` — `TLP:AMBER`, `AMBER+STRICT`,
+  and `RED` are permanently ineligible for outbound sharing, matching what
+  those markings actually mean.
+- **`APPROVE_TI_SHARING` is CISO-only in the matrix — not even IR Lead has
+  it.** That's Phase 1's design, not something added here; this phase is the
+  first to actually exercise it. Approving/rejecting writes an audit-trail
+  entry (`field: 'ti_share_approved'` / `'ti_share_rejected'`).
+- **Known limitation**: no actual outbound delivery. There's no real sharing
+  community to push to in a scaffold — approval is the complete, real,
+  audited action; the "send it to MISP/whoever" step is a documented gap,
+  the same honest trade-off as evidence storage using local WORM instead of
+  MinIO.
+
 ## Notes for going further
 
 - `synchronize: true` in `backend/src/database/database.module.ts` is a
@@ -186,6 +228,16 @@ Post-Incident Review):
   didn't drop, and every insert past the first failed until the dev DB file
   was deleted and reseeded. Expect to do the same after any relation-shape
   change until this moves to real migrations.
+- **TypeORM relations you don't list in `relations: [...]` are `undefined`,
+  silently.** `ThreatIntelService.importIndicators` originally queried
+  `CaseThreatIndicator` rows without `relations: ['case']`, then built a
+  `ThreatWatchlistMatch` from `link.case` — which was `undefined`. No
+  exception; SQLite (without FK enforcement) just saved a match row pointing
+  nowhere, and the endpoint reported `matched: 1` for a match that then
+  couldn't be found in any case's list. If a query result gets its relation
+  accessed a few lines later, check `relations: [...]` on that exact query —
+  the same object shape from a *different* query with `relations` set won't
+  save you.
 - The RBAC matrix lives in `backend/src/common/permissions.ts` and is mirrored
   (read-only, UI-gating purposes) in `frontend/src/api/types.ts`. The API is
   always the enforcement point.

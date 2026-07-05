@@ -319,3 +319,78 @@ export interface PirActionItem {
   done: boolean;
   createdAt: string;
 }
+
+export enum IndicatorType {
+  IP = 'ip',
+  DOMAIN = 'domain',
+  URL = 'url',
+  FILE_HASH = 'file_hash',
+  EMAIL = 'email',
+  OTHER = 'other',
+}
+
+export const INDICATOR_TYPE_LABELS: Record<IndicatorType, string> = {
+  [IndicatorType.IP]: 'IP address',
+  [IndicatorType.DOMAIN]: 'Domain',
+  [IndicatorType.URL]: 'URL',
+  [IndicatorType.FILE_HASH]: 'File hash',
+  [IndicatorType.EMAIL]: 'Email address',
+  [IndicatorType.OTHER]: 'Other',
+};
+
+export enum Tlp {
+  CLEAR = 'TLP:CLEAR',
+  GREEN = 'TLP:GREEN',
+  AMBER = 'TLP:AMBER',
+  AMBER_STRICT = 'TLP:AMBER+STRICT',
+  RED = 'TLP:RED',
+}
+
+export interface ThreatIndicator {
+  id: number;
+  type: IndicatorType;
+  value: string;
+  confidence: number;
+  tlp: Tlp;
+  source: string;
+  threatActor: string | null;
+  campaign: string | null;
+  firstSeenAt: string;
+  lastSeenAt: string;
+}
+
+export interface CaseThreatIndicator {
+  id: number;
+  case: Case;
+  threatIndicator: ThreatIndicator;
+  linkedBy: UserSummary;
+  note: string | null;
+  linkedAt: string;
+}
+
+export interface ThreatWatchlistMatch {
+  id: number;
+  threatIndicator: ThreatIndicator;
+  matchedAt: string;
+  acknowledged: boolean;
+  acknowledgedBy: UserSummary | null;
+  acknowledgedAt: string | null;
+}
+
+export enum ShareRequestStatus {
+  PENDING = 'pending',
+  APPROVED = 'approved',
+  REJECTED = 'rejected',
+}
+
+export interface ThreatShareRequest {
+  id: number;
+  threatIndicator: ThreatIndicator;
+  case: Case;
+  requestedBy: UserSummary;
+  requestedAt: string;
+  status: ShareRequestStatus;
+  decidedBy: UserSummary | null;
+  decidedAt: string | null;
+  reason: string | null;
+}
